@@ -22,6 +22,21 @@ export type StickerContextMetadata = {
   isVideo?: boolean;
 } & Record<string, unknown>;
 
+export type TelegramMediaContextMetadata = {
+  kind?: "image" | "video" | "audio" | "document" | "sticker";
+  fileId?: string;
+  fileUniqueId?: string;
+  fileName?: string;
+  mimeType?: string;
+  width?: number;
+  height?: number;
+  duration?: number;
+  emoji?: string;
+  setName?: string;
+  isAnimated?: boolean;
+  isVideo?: boolean;
+} & Record<string, unknown>;
+
 export type MsgContext = {
   Body?: string;
   /**
@@ -106,10 +121,17 @@ export type MsgContext = {
   MediaPaths?: string[];
   MediaUrls?: string[];
   MediaTypes?: string[];
+  MediaFileId?: string;
+  MediaFileIds?: string[];
+  MediaFileUniqueId?: string;
+  MediaFileUniqueIds?: string[];
+  MediaMetadata?: TelegramMediaContextMetadata;
+  MediaMetadataItems?: TelegramMediaContextMetadata[];
   /** Telegram sticker metadata (emoji, set name, file IDs, cached description). */
   Sticker?: StickerContextMetadata;
   /** True when current-turn sticker media is present in MediaPaths (false for cached-description path). */
   StickerMediaIncluded?: boolean;
+  ReplyToMediaMetadata?: TelegramMediaContextMetadata;
   OutputDir?: string;
   OutputBase?: string;
   /** Remote host for SCP when media lives on a different machine (e.g., openclaw@192.168.64.3). */

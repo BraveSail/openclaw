@@ -455,6 +455,43 @@ describe("describeReplyTarget", () => {
     expect(result?.forwardedFrom?.fromId).toBe("123");
     expect(result?.forwardedFrom?.date).toBe(700);
   });
+
+  it("includes reply media metadata for stickers", () => {
+    const result = describeReplyTarget({
+      message_id: 6,
+      date: 1400,
+      chat: { id: 1, type: "private" },
+      reply_to_message: {
+        message_id: 5,
+        date: 1300,
+        chat: { id: 1, type: "private" },
+        from: { id: 42, first_name: "Alice", is_bot: false },
+        sticker: {
+          file_id: "sticker_file_id_123",
+          file_unique_id: "sticker_unique_123",
+          type: "regular",
+          width: 512,
+          height: 512,
+          is_animated: false,
+          is_video: false,
+          emoji: "🎉",
+          set_name: "TestStickerPack",
+        },
+      },
+      // oxlint-disable-next-line typescript/no-explicit-any
+    } as any);
+
+    expect(result?.body).toBe("<media:sticker>");
+    expect(result?.mediaMetadata).toEqual(
+      expect.objectContaining({
+        kind: "sticker",
+        fileId: "sticker_file_id_123",
+        fileUniqueId: "sticker_unique_123",
+        emoji: "🎉",
+        setName: "TestStickerPack",
+      }),
+    );
+  });
 });
 
 describe("hasBotMention", () => {

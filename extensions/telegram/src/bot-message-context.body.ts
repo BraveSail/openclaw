@@ -216,6 +216,11 @@ export async function resolveTelegramInboundBody(params: {
   if (!bodyText && allMedia.length > 0) {
     if (hasAudio) {
       bodyText = preflightTranscript || "<media:audio>";
+    } else if (placeholder) {
+      bodyText =
+        placeholder === "<media:image>"
+          ? `<media:image>${allMedia.length > 1 ? ` (${allMedia.length} images)` : ""}`
+          : placeholder;
     } else {
       bodyText = `<media:image>${allMedia.length > 1 ? ` (${allMedia.length} images)` : ""}`;
     }

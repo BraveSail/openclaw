@@ -331,6 +331,7 @@ export type TelegramReplyTarget = {
   kind: "reply" | "quote";
   /** Forward context if the reply target was itself a forwarded message (issue #9619). */
   forwardedFrom?: TelegramForwardedContext;
+  mediaMetadata?: import("./types.js").TelegramInboundMediaMetadata;
 };
 
 export function describeReplyTarget(msg: Message): TelegramReplyTarget | null {
@@ -386,5 +387,95 @@ export function describeReplyTarget(msg: Message): TelegramReplyTarget | null {
     body,
     kind,
     forwardedFrom,
+    mediaMetadata: replyLike
+      ? (() => {
+          if (replyLike.sticker) {
+            return {
+              kind: "sticker" as const,
+              fileId: replyLike.sticker.file_id,
+              fileUniqueId: replyLike.sticker.file_unique_id,
+              width: replyLike.sticker.width,
+              height: replyLike.sticker.height,
+              emoji: replyLike.sticker.emoji ?? undefined,
+              setName: replyLike.sticker.set_name ?? undefined,
+              isAnimated: replyLike.sticker.is_animated === true,
+              isVideo: replyLike.sticker.is_video === true,
+            };
+          }
+          const photo = replyLike.photo?.[replyLike.photo.length - 1];
+          if (photo) {
+            return {
+              kind: "image" as const,
+              fileId: photo.file_id,
+              fileUniqueId: photo.file_unique_id,
+              width: photo.width,
+              height: photo.height,
+            };
+          }
+          if (replyLike.video) {
+            return {
+              kind: "video" as const,
+              fileId: replyLike.video.file_id,
+              fileUniqueId: replyLike.video.file_unique_id,
+              fileName: replyLike.video.file_name ?? undefined,
+              mimeType: replyLike.video.mime_type ?? undefined,
+              width: replyLike.video.width,
+              height: replyLike.video.height,
+              duration: replyLike.video.duration,
+            };
+          }
+          if (replyLike.video_note) {
+            return {
+              kind: "video" as const,
+              fileId: replyLike.video_note.file_id,
+              fileUniqueId: replyLike.video_note.file_unique_id,
+              width: replyLike.video_note.length,
+              height: replyLike.video_note.length,
+              duration: replyLike.video_note.duration,
+            };
+          }
+          if (replyLike.animation) {
+            return {
+              kind: "video" as const,
+              fileId: replyLike.animation.file_id,
+              fileUniqueId: replyLike.animation.file_unique_id,
+              fileName: replyLike.animation.file_name ?? undefined,
+              mimeType: replyLike.animation.mime_type ?? undefined,
+              width: replyLike.animation.width,
+              height: replyLike.animation.height,
+              duration: replyLike.animation.duration,
+            };
+          }
+          if (replyLike.document) {
+            return {
+              kind: "document" as const,
+              fileId: replyLike.document.file_id,
+              fileUniqueId: replyLike.document.file_unique_id,
+              fileName: replyLike.document.file_name ?? undefined,
+              mimeType: replyLike.document.mime_type ?? undefined,
+            };
+          }
+          if (replyLike.audio) {
+            return {
+              kind: "audio" as const,
+              fileId: replyLike.audio.file_id,
+              fileUniqueId: replyLike.audio.file_unique_id,
+              fileName: replyLike.audio.file_name ?? undefined,
+              mimeType: replyLike.audio.mime_type ?? undefined,
+              duration: replyLike.audio.duration,
+            };
+          }
+          if (replyLike.voice) {
+            return {
+              kind: "audio" as const,
+              fileId: replyLike.voice.file_id,
+              fileUniqueId: replyLike.voice.file_unique_id,
+              mimeType: replyLike.voice.mime_type ?? undefined,
+              duration: replyLike.voice.duration,
+            };
+          }
+          return undefined;
+        })()
+      : undefined,
   };
 }

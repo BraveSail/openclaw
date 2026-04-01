@@ -189,4 +189,94 @@ describe("resolveTelegramInboundBody", () => {
     });
     expect(result?.bodyText).not.toContain("<media:audio>");
   });
+
+  it("preserves sticker placeholder when message has sticker media without text", async () => {
+    transcribeFirstAudioMock.mockReset();
+
+    const result = await resolveTelegramInboundBody({
+      cfg: { channels: { telegram: {} } } as never,
+      primaryCtx: { me: { id: 7, username: "bot" } } as never,
+      msg: {
+        message_id: 3,
+        date: 1_700_000_002,
+        chat: { id: 1234, type: "private" },
+        from: { id: 46, first_name: "Eve" },
+        sticker: {
+          file_id: "stk-1",
+          file_unique_id: "ustk-1",
+          type: "regular",
+          width: 512,
+          height: 512,
+          is_animated: false,
+          is_video: false,
+        },
+        entities: [],
+      } as never,
+      allMedia: [{ path: "/tmp/sticker.webp", contentType: "image/webp" }],
+      isGroup: false,
+      chatId: 1234,
+      senderId: "46",
+      senderUsername: "",
+      routeAgentId: undefined,
+      effectiveGroupAllow: normalizeAllowFrom([]),
+      effectiveDmAllow: normalizeAllowFrom([]),
+      groupConfig: undefined,
+      topicConfig: undefined,
+      requireMention: false,
+      options: undefined,
+      groupHistories: new Map(),
+      historyLimit: 0,
+      logger: { info: vi.fn() },
+    });
+
+    expect(result).toMatchObject({
+      bodyText: "<media:sticker>",
+      rawBody: "<media:sticker>",
+    });
+  });
+
+  it("treats Telegram GIF animations as video placeholders when message has no text", async () => {
+    transcribeFirstAudioMock.mockReset();
+
+    const result = await resolveTelegramInboundBody({
+      cfg: { channels: { telegram: {} } } as never,
+      primaryCtx: { me: { id: 7, username: "bot" } } as never,
+      msg: {
+        message_id: 4,
+        date: 1_700_000_003,
+        chat: { id: 1234, type: "private" },
+        from: { id: 46, first_name: "Eve" },
+        animation: {
+          file_id: "gif-1",
+          file_unique_id: "ugif-1",
+          width: 320,
+          height: 180,
+          duration: 3,
+          file_name: "clip.gif",
+          mime_type: "image/gif",
+        },
+        entities: [],
+      } as never,
+      allMedia: [{ path: "/tmp/clip.gif", contentType: "image/gif" }],
+      isGroup: false,
+      chatId: 1234,
+      senderId: "46",
+      senderUsername: "",
+      routeAgentId: undefined,
+      effectiveGroupAllow: normalizeAllowFrom([]),
+      effectiveDmAllow: normalizeAllowFrom([]),
+      groupConfig: undefined,
+      topicConfig: undefined,
+      requireMention: false,
+      options: undefined,
+      groupHistories: new Map(),
+      historyLimit: 0,
+      logger: { info: vi.fn() },
+    });
+
+    expect(result).toMatchObject({
+      bodyText: "<media:video>",
+      rawBody: "<media:video>",
+    });
+  });
 });

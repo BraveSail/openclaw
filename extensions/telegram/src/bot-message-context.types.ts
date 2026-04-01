@@ -7,12 +7,17 @@ import type {
   TelegramTopicConfig,
 } from "openclaw/plugin-sdk/config-runtime";
 import type { HistoryEntry } from "openclaw/plugin-sdk/reply-history";
-import type { StickerMetadata, TelegramContext } from "./bot/types.js";
+import type {
+  StickerMetadata,
+  TelegramContext,
+  TelegramInboundMediaMetadata,
+} from "./bot/types.js";
 
 export type TelegramMediaRef = {
   path: string;
   contentType?: string;
   stickerMetadata?: StickerMetadata;
+  mediaMetadata?: TelegramInboundMediaMetadata;
 };
 
 export type TelegramMessageContextOptions = {
