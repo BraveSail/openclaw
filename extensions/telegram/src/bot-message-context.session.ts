@@ -253,6 +253,32 @@ export async function buildTelegramInboundContextPayload(params: {
       : undefined;
   const currentMediaForContext = stickerCacheHit ? [] : allMedia;
   const contextMedia = [...currentMediaForContext, ...replyMedia];
+  const mediaMetadataItems = allMedia
+    .map((m) => m.mediaMetadata)
+    .filter((m): m is NonNullable<(typeof allMedia)[number]["mediaMetadata"]> => Boolean(m));
+  const mediaFileIds = mediaMetadataItems.map((m) => m.fileId).filter(Boolean);
+  const mediaFileUniqueIds = mediaMetadataItems.map((m) => m.fileUniqueId).filter(Boolean);
+  const formatMediaMetadata = (label: string, value?: Record<string, unknown>) => {
+    if (!value) return undefined;
+    const normalized = Object.fromEntries(
+      Object.entries(value).filter(
+        ([, entry]) => entry !== undefined && entry !== null && entry !== "",
+      ),
+    );
+    return Object.keys(normalized).length > 0
+      ? `${label}: ${JSON.stringify(normalized)}`
+      : undefined;
+  };
+  const untrustedContext = [
+    formatMediaMetadata(
+      "Current media metadata",
+      mediaMetadataItems[0] as unknown as Record<string, unknown> | undefined,
+    ),
+    formatMediaMetadata(
+      "Reply target media metadata",
+      replyTarget?.mediaMetadata as unknown as Record<string, unknown> | undefined,
+    ),
+  ].filter(Boolean) as string[];
   const ctxPayload = sessionRuntime.finalizeInboundContext({
     Body: combinedBody,
     BodyForAgent: bodyText,
@@ -267,6 +293,7 @@ export async function buildTelegramInboundContextPayload(params: {
     ConversationLabel: conversationLabel,
     GroupSubject: isGroup ? (msg.chat.title ?? undefined) : undefined,
     GroupSystemPrompt: isGroup || (!isGroup && groupConfig) ? groupSystemPrompt : undefined,
+    UntrustedContext: untrustedContext.length > 0 ? untrustedContext : undefined,
     SenderName: senderName,
     SenderId: senderId || undefined,
     SenderUsername: senderUsername || undefined,
@@ -306,8 +333,15 @@ export async function buildTelegramInboundContextPayload(params: {
       contextMedia.length > 0
         ? (contextMedia.map((m) => m.contentType).filter(Boolean) as string[])
         : undefined,
+    MediaFileId: mediaFileIds[0],
+    MediaFileIds: mediaFileIds.length > 0 ? mediaFileIds : undefined,
+    MediaFileUniqueId: mediaFileUniqueIds[0],
+    MediaFileUniqueIds: mediaFileUniqueIds.length > 0 ? mediaFileUniqueIds : undefined,
+    MediaMetadata: mediaMetadataItems[0],
+    MediaMetadataItems: mediaMetadataItems.length > 0 ? mediaMetadataItems : undefined,
     Sticker: allMedia[0]?.stickerMetadata,
     StickerMediaIncluded: allMedia[0]?.stickerMetadata ? !stickerCacheHit : undefined,
+    ReplyToMediaMetadata: replyTarget?.mediaMetadata,
     ...(locationData ? toLocationContext(locationData) : undefined),
     CommandAuthorized: commandAuthorized,
     CommandSource: options?.commandSource,
