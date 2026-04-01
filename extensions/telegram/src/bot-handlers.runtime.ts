@@ -392,6 +392,8 @@ export const registerTelegramHandlers = ({
 
       const captionMsg = entry.messages.find((m) => m.msg.caption || m.msg.text);
       const primaryEntry = captionMsg ?? entry.messages[0];
+      const firstEntry = entry.messages[0];
+      const lastEntry = entry.messages.at(-1) ?? primaryEntry;
 
       const allMedia: TelegramMediaRef[] = [];
       for (const { ctx } of entry.messages) {
@@ -420,9 +422,23 @@ export const registerTelegramHandlers = ({
         }
       }
 
+      const combinedText = entry.messages
+        .map((item) => item.msg.text ?? item.msg.caption ?? "")
+        .filter(Boolean)
+        .join("\n");
       const storeAllowFrom = await loadStoreAllowFrom();
       const replyMedia = await resolveReplyMediaForMessage(primaryEntry.ctx, primaryEntry.msg);
-      await processMessage(primaryEntry.ctx, allMedia, storeAllowFrom, undefined, replyMedia);
+      const messageCtx = combinedText.trim()
+        ? buildSyntheticContext(
+            firstEntry.ctx,
+            buildSyntheticTextMessage({
+              base: primaryEntry.msg,
+              text: combinedText,
+              date: lastEntry.msg.date ?? primaryEntry.msg.date,
+            }),
+          )
+        : primaryEntry.ctx;
+      await processMessage(messageCtx, allMedia, storeAllowFrom, undefined, replyMedia);
     } catch (err) {
       runtime.error?.(danger(`media group handler failed: ${String(err)}`));
     }
