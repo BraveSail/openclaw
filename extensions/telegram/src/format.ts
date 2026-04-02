@@ -231,45 +231,124 @@ export function renderTelegramHtmlText(
 export function extractTelegramSupportedHtmlEntities(
   text: string,
 ): { text: string; entities: TelegramTextEntityLike[] } | null {
-  if (!text || !text.includes("<blockquote")) {
+  if (!text || !text.includes("<")) {
     return null;
   }
+
   const entities: TelegramTextEntityLike[] = [];
+  const stack: Array<{ type: string; offset: number; href?: string }> = [];
+  const tagPattern = /<[^>]+>/g;
   let plainText = "";
   let index = 0;
-  const tagPattern = /<blockquote(?:\s+expandable)?\s*>|<\/blockquote>/gi;
-  const stack: { type: "blockquote" | "expandable_blockquote"; offset: number }[] = [];
   let match: RegExpExecArray | null;
+
+  const pushText = (chunk: string) => {
+    if (!chunk) return;
+    plainText += chunk
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&amp;/g, "&");
+  };
+
   while ((match = tagPattern.exec(text)) !== null) {
     const start = match.index;
     const token = match[0];
-    plainText += text.slice(index, start);
+    pushText(text.slice(index, start));
     index = start + token.length;
-    if (token.toLowerCase() === "</blockquote>") {
+
+    const lower = token.toLowerCase();
+    if (lower === "<b>") {
+      stack.push({ type: "bold", offset: plainText.length });
+      continue;
+    }
+    if (lower === "</b>") {
       const current = stack.pop();
-      if (!current) {
-        return null;
-      }
+      if (!current) return null;
+      entities.push({ type: current.type, offset: current.offset, length: plainText.length - current.offset });
+      continue;
+    }
+    if (lower === "<i>") {
+      stack.push({ type: "italic", offset: plainText.length });
+      continue;
+    }
+    if (lower === "</i>") {
+      const current = stack.pop();
+      if (!current) return null;
+      entities.push({ type: current.type, offset: current.offset, length: plainText.length - current.offset });
+      continue;
+    }
+    if (lower === "<s>") {
+      stack.push({ type: "strikethrough", offset: plainText.length });
+      continue;
+    }
+    if (lower === "</s>") {
+      const current = stack.pop();
+      if (!current) return null;
+      entities.push({ type: current.type, offset: current.offset, length: plainText.length - current.offset });
+      continue;
+    }
+    if (lower === "<code>") {
+      stack.push({ type: "code", offset: plainText.length });
+      continue;
+    }
+    if (lower === "</code>") {
+      const current = stack.pop();
+      if (!current) return null;
+      entities.push({ type: current.type, offset: current.offset, length: plainText.length - current.offset });
+      continue;
+    }
+    if (lower === "<tg-spoiler>") {
+      stack.push({ type: "spoiler", offset: plainText.length });
+      continue;
+    }
+    if (lower === "</tg-spoiler>") {
+      const current = stack.pop();
+      if (!current) return null;
+      entities.push({ type: current.type, offset: current.offset, length: plainText.length - current.offset });
+      continue;
+    }
+    if (lower === "<blockquote>") {
+      stack.push({ type: "blockquote", offset: plainText.length });
+      continue;
+    }
+    if (lower === "<blockquote expandable>") {
+      stack.push({ type: "expandable_blockquote", offset: plainText.length });
+      continue;
+    }
+    if (lower === "</blockquote>") {
+      const current = stack.pop();
+      if (!current) return null;
+      entities.push({ type: current.type, offset: current.offset, length: plainText.length - current.offset });
+      continue;
+    }
+    if (lower.startsWith("<a ")) {
+      const hrefMatch = token.match(/href="([^"]+)"/i);
+      stack.push({ type: "text_link", offset: plainText.length, href: hrefMatch?.[1] });
+      continue;
+    }
+    if (lower === "</a>") {
+      const current = stack.pop();
+      if (!current) return null;
       entities.push({
         type: current.type,
         offset: current.offset,
         length: plainText.length - current.offset,
+        ...(current.href ? { url: current.href } : {}),
       });
       continue;
     }
-    stack.push({
-      type: /expandable/i.test(token) ? "expandable_blockquote" : "blockquote",
-      offset: plainText.length,
-    });
+    if (lower === "<br>" || lower === "<br/>" || lower === "<br />") {
+      plainText += "\n";
+      continue;
+    }
   }
-  plainText += text.slice(index);
+
+  pushText(text.slice(index));
   if (stack.length > 0) {
     return null;
   }
-  if (!entities.length) {
-    return null;
-  }
-  return { text: plainText, entities };
+  return entities.length > 0 ? { text: plainText, entities } : null;
 }
 
 type TelegramHtmlTag = {
