@@ -1764,6 +1764,27 @@ describe("sendMessageTelegram", () => {
     expect(sendMessage.mock.calls.map((call) => String(call[1] ?? "")).join("")).toBe(plainText);
     expect(res.messageId).toBe("96");
   });
+
+  it("uses Telegram entities for expandable blockquotes on send html path", async () => {
+    const chatId = "123";
+    const sendMessage = vi.fn().mockResolvedValue({ message_id: 89, chat: { id: chatId } });
+    const api = { sendMessage } as unknown as { sendMessage: typeof sendMessage };
+
+    await sendMessageTelegram(chatId, "<blockquote expandable>fold me</blockquote>", {
+      token: "tok",
+      api,
+      textMode: "html",
+    });
+
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(sendMessage).toHaveBeenCalledWith(
+      chatId,
+      "fold me",
+      expect.objectContaining({
+        entities: [{ offset: 0, length: 7, type: "expandable_blockquote" }],
+      }),
+    );
+  });
 });
 
 describe("reactMessageTelegram", () => {
@@ -2269,6 +2290,26 @@ describe("editMessageTelegram", () => {
       expect.objectContaining({
         parse_mode: "HTML",
         link_preview_options: { is_disabled: true },
+      }),
+    );
+  });
+
+  it("uses Telegram entities for expandable blockquotes on edit html path", async () => {
+    botApi.editMessageText.mockResolvedValue({ message_id: 1, chat: { id: "123" } });
+
+    await editMessageTelegram("123", 1, "<blockquote expandable>fold me</blockquote>", {
+      token: "tok",
+      cfg: {},
+      textMode: "html",
+    });
+
+    expect(botApi.editMessageText).toHaveBeenCalledTimes(1);
+    expect(botApi.editMessageText).toHaveBeenCalledWith(
+      "123",
+      1,
+      "fold me",
+      expect.objectContaining({
+        entities: [{ offset: 0, length: 7, type: "expandable_blockquote" }],
       }),
     );
   });

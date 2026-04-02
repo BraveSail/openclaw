@@ -14,6 +14,12 @@ export type TelegramFormattedChunk = {
   text: string;
 };
 
+export type TelegramTextEntityLike = {
+  offset: number;
+  length: number;
+  type: string;
+};
+
 function escapeHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -220,6 +226,50 @@ export function renderTelegramHtmlText(
   }
   // markdownToTelegramHtml already wraps file references by default
   return markdownToTelegramHtml(text, { tableMode: options.tableMode });
+}
+
+export function extractTelegramSupportedHtmlEntities(
+  text: string,
+): { text: string; entities: TelegramTextEntityLike[] } | null {
+  if (!text || !text.includes("<blockquote")) {
+    return null;
+  }
+  const entities: TelegramTextEntityLike[] = [];
+  let plainText = "";
+  let index = 0;
+  const tagPattern = /<blockquote(?:\s+expandable)?\s*>|<\/blockquote>/gi;
+  const stack: { type: "blockquote" | "expandable_blockquote"; offset: number }[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = tagPattern.exec(text)) !== null) {
+    const start = match.index;
+    const token = match[0];
+    plainText += text.slice(index, start);
+    index = start + token.length;
+    if (token.toLowerCase() === "</blockquote>") {
+      const current = stack.pop();
+      if (!current) {
+        return null;
+      }
+      entities.push({
+        type: current.type,
+        offset: current.offset,
+        length: plainText.length - current.offset,
+      });
+      continue;
+    }
+    stack.push({
+      type: /expandable/i.test(token) ? "expandable_blockquote" : "blockquote",
+      offset: plainText.length,
+    });
+  }
+  plainText += text.slice(index);
+  if (stack.length > 0) {
+    return null;
+  }
+  if (!entities.length) {
+    return null;
+  }
+  return { text: plainText, entities };
 }
 
 type TelegramHtmlTag = {
