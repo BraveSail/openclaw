@@ -15,7 +15,12 @@ import { buildTypingThreadParams } from "./bot/helpers.js";
 import type { TelegramInlineButtons } from "./button-types.js";
 import { splitTelegramCaption } from "./caption.js";
 import { resolveTelegramFetch } from "./fetch.js";
-import { renderTelegramHtmlText, splitTelegramHtmlChunks } from "./format.js";
+import {
+  extractTelegramSupportedHtmlEntities,
+  renderTelegramHtmlText,
+  splitTelegramHtmlChunks,
+  type TelegramTextEntityLike,
+} from "./format.js";
 import { buildInlineKeyboard } from "./inline-keyboard.js";
 import {
   isRecoverableTelegramNetworkError,
@@ -95,6 +100,8 @@ type TelegramSendOpts = {
   buttons?: TelegramInlineButtons;
   /** Send image as document to avoid Telegram compression. Defaults to false. */
   forceDocument?: boolean;
+  /** Optional prebuilt Telegram text entities. When provided, send/edit bypasses parse_mode HTML. */
+  entities?: TelegramTextEntityLike[];
 };
 
 type TelegramSendResult = {
@@ -626,6 +633,10 @@ export async function sendMessageTelegram(
     accountId: account.accountId,
   });
   const renderHtmlText = (value: string) => renderTelegramHtmlText(value, { textMode, tableMode });
+  const extractedDirectEntities =
+    textMode === "html" ? extractTelegramSupportedHtmlEntities(text) : null;
+  const directEntities = opts.entities ?? extractedDirectEntities?.entities;
+  const directEntityText = extractedDirectEntities?.text ?? text;
 
   // Resolve link preview setting from config (default: enabled).
   const linkPreviewEnabled = account.config.linkPreview ?? true;
@@ -634,6 +645,7 @@ export async function sendMessageTelegram(
   type TelegramTextChunk = {
     plainText: string;
     htmlText?: string;
+    entities?: TelegramTextEntityLike[];
   };
 
   const sendTelegramTextChunk = async (
@@ -652,6 +664,7 @@ export async function sendMessageTelegram(
         const plainParams: TelegramSendMessageParams = {
           ...baseParams,
           ...(opts.silent === true ? { disable_notification: true } : {}),
+          ...(chunk.entities ? { entities: chunk.entities } : {}),
         };
         const hasPlainParams = Object.keys(plainParams).length > 0;
         const requestPlain = (retryLabel: string) =>
@@ -662,7 +675,7 @@ export async function sendMessageTelegram(
                 : api.sendMessage(chatId, chunk.plainText),
             retryLabel,
           );
-        if (!chunk.htmlText) {
+        if (!chunk.htmlText || chunk.entities) {
           return await requestPlain(label);
         }
         const htmlText = chunk.htmlText;
@@ -714,6 +727,9 @@ export async function sendMessageTelegram(
 
   const buildChunkedTextPlan = (rawText: string, context: string): TelegramTextChunk[] => {
     const fallbackText = opts.plainText ?? rawText;
+    if (rawText === text && directEntities && directEntityText.length <= 4000) {
+      return [{ plainText: directEntityText, entities: directEntities }];
+    }
     let htmlChunks: string[];
     try {
       htmlChunks = splitTelegramHtmlChunks(rawText, 4000);
@@ -1352,6 +1368,10 @@ export async function editMessageTelegram(
     accountId: account.accountId,
   });
   const htmlText = renderTelegramHtmlText(text, { textMode, tableMode });
+  const extractedDirectEntities =
+    textMode === "html" ? extractTelegramSupportedHtmlEntities(text) : null;
+  const directEntities = opts.entities ?? extractedDirectEntities?.entities;
+  const directEntityText = extractedDirectEntities?.text ?? text;
 
   // Reply markup semantics:
   // - buttons === undefined → don't send reply_markup (keep existing)
@@ -1361,9 +1381,11 @@ export async function editMessageTelegram(
   const builtKeyboard = shouldTouchButtons ? buildInlineKeyboard(opts.buttons) : undefined;
   const replyMarkup = shouldTouchButtons ? (builtKeyboard ?? { inline_keyboard: [] }) : undefined;
 
-  const editParams: TelegramEditMessageTextParams = {
-    parse_mode: "HTML",
-  };
+  const editParams: TelegramEditMessageTextParams = directEntities
+    ? { entities: directEntities }
+    : {
+        parse_mode: "HTML",
+      };
   if (opts.linkPreview === false) {
     editParams.link_preview_options = { is_disabled: true };
   }
@@ -1384,7 +1406,13 @@ export async function editMessageTelegram(
       verbose: opts.verbose,
       requestHtml: (retryLabel) =>
         requestWithEditShouldLog(
-          () => api.editMessageText(chatId, messageId, htmlText, editParams),
+          () =>
+            api.editMessageText(
+              chatId,
+              messageId,
+              directEntities ? directEntityText : htmlText,
+              editParams,
+            ),
           retryLabel,
           (err) => !isTelegramMessageNotModifiedError(err),
         ),
