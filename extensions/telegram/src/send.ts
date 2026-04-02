@@ -1,4 +1,4 @@
-import type { ReactionType, ReactionTypeEmoji } from "@grammyjs/types";
+import type { MessageEntity, ReactionType, ReactionTypeEmoji } from "@grammyjs/types";
 import * as grammy from "grammy";
 import { type ApiClientOptions, Bot, HttpError } from "grammy";
 import { recordChannelActivity } from "openclaw/plugin-sdk/channel-activity-runtime";
@@ -101,7 +101,7 @@ type TelegramSendOpts = {
   /** Send image as document to avoid Telegram compression. Defaults to false. */
   forceDocument?: boolean;
   /** Optional prebuilt Telegram text entities. When provided, send/edit bypasses parse_mode HTML. */
-  entities?: TelegramTextEntityLike[];
+  entities?: MessageEntity[];
 };
 
 type TelegramSendResult = {
@@ -634,17 +634,26 @@ export async function sendMessageTelegram(
     accountId: account.accountId,
   });
   const renderHtmlText = (value: string) => renderTelegramHtmlText(value, { textMode, tableMode });
-  const extractedDirectEntities =
-    textMode === "html" ? extractTelegramSupportedHtmlEntities(text) : null;
-  const precomputedDirectEntities = opts.entities ?? extractedDirectEntities?.entities;
-  const directEntityText = extractedDirectEntities?.text ?? text;
-  const directEntities = shouldAutoFoldTelegramText({
-    text: directEntityText,
-    entities: precomputedDirectEntities,
+  const explicitExtractedEntities = textMode === "html" ? extractTelegramSupportedHtmlEntities(text) : null;
+  const explicitEntities: MessageEntity[] | undefined = coerceTelegramEntities(
+    opts.entities ?? explicitExtractedEntities?.entities,
+  );
+  const shouldAutoFold = !opts.entities && shouldAutoFoldTelegramText({
+    text,
+    entities: explicitEntities,
     textMode,
-  })
-    ? buildAutoFoldTelegramEntities(directEntityText)
-    : precomputedDirectEntities;
+  });
+  const autoFoldSource = shouldAutoFold ? renderHtmlText(text) : undefined;
+  const autoFoldExtracted = autoFoldSource ? extractTelegramSupportedHtmlEntities(autoFoldSource) : null;
+  const directEntityText = shouldAutoFold
+    ? (autoFoldExtracted?.text ?? text)
+    : (explicitExtractedEntities?.text ?? text);
+  const directEntities = shouldAutoFold
+    ? coerceTelegramEntities([
+        ...(autoFoldExtracted?.entities ?? []),
+        ...(buildAutoFoldTelegramEntities(directEntityText) ?? []),
+      ])
+    : explicitEntities;
 
   // Resolve link preview setting from config (default: enabled).
   const linkPreviewEnabled = account.config.linkPreview ?? true;
@@ -653,7 +662,7 @@ export async function sendMessageTelegram(
   type TelegramTextChunk = {
     plainText: string;
     htmlText?: string;
-    entities?: TelegramTextEntityLike[];
+    entities?: MessageEntity[];
   };
 
   const sendTelegramTextChunk = async (
@@ -674,7 +683,7 @@ export async function sendMessageTelegram(
           ...(opts.silent === true ? { disable_notification: true } : {}),
           ...(chunk.entities ? { entities: chunk.entities } : {}),
         };
-        const hasPlainParams = Object.keys(plainParams).length > 0;
+        const hasPlainParams = plainParams ? Object.keys(plainParams).length > 0 : false;
         const requestPlain = (retryLabel: string) =>
           requestWithChatNotFound(
             () =>
@@ -736,7 +745,7 @@ export async function sendMessageTelegram(
   const buildChunkedTextPlan = (rawText: string, context: string): TelegramTextChunk[] => {
     const fallbackText = opts.plainText ?? rawText;
     if (rawText === text && directEntities && directEntityText.length <= 4000) {
-      return [{ plainText: directEntityText, entities: directEntities }];
+      return [{ plainText: directEntityText, entities: coerceTelegramEntities(directEntities) }];
     }
     let htmlChunks: string[];
     try {
@@ -1281,6 +1290,7 @@ type TelegramEditOpts = {
   linkPreview?: boolean;
   /** Inline keyboard buttons (reply markup). Pass empty array to remove buttons. */
   buttons?: TelegramInlineButtons;
+  entities?: MessageEntity[];
   /** Resolved runtime config from the command or gateway boundary. */
   cfg: OpenClawConfig;
 };
@@ -1381,17 +1391,26 @@ export async function editMessageTelegram(
     accountId: account.accountId,
   });
   const htmlText = renderTelegramHtmlText(text, { textMode, tableMode });
-  const extractedDirectEntities =
-    textMode === "html" ? extractTelegramSupportedHtmlEntities(text) : null;
-  const precomputedDirectEntities = opts.entities ?? extractedDirectEntities?.entities;
-  const directEntityText = extractedDirectEntities?.text ?? text;
-  const directEntities = shouldAutoFoldTelegramText({
-    text: directEntityText,
-    entities: precomputedDirectEntities,
+  const explicitExtractedEntities = textMode === "html" ? extractTelegramSupportedHtmlEntities(text) : null;
+  const explicitEntities: MessageEntity[] | undefined = coerceTelegramEntities(
+    opts.entities ?? explicitExtractedEntities?.entities,
+  );
+  const shouldAutoFold = !opts.entities && shouldAutoFoldTelegramText({
+    text,
+    entities: explicitEntities,
     textMode,
-  })
-    ? buildAutoFoldTelegramEntities(directEntityText)
-    : precomputedDirectEntities;
+  });
+  const autoFoldSource = shouldAutoFold ? htmlText : undefined;
+  const autoFoldExtracted = autoFoldSource ? extractTelegramSupportedHtmlEntities(autoFoldSource) : null;
+  const directEntityText = shouldAutoFold
+    ? (autoFoldExtracted?.text ?? text)
+    : (explicitExtractedEntities?.text ?? text);
+  const directEntities = shouldAutoFold
+    ? coerceTelegramEntities([
+        ...(autoFoldExtracted?.entities ?? []),
+        ...(buildAutoFoldTelegramEntities(directEntityText) ?? []),
+      ])
+    : explicitEntities;
 
   // Reply markup semantics:
   // - buttons === undefined → don't send reply_markup (keep existing)
@@ -1401,11 +1420,7 @@ export async function editMessageTelegram(
   const builtKeyboard = shouldTouchButtons ? buildInlineKeyboard(opts.buttons) : undefined;
   const replyMarkup = shouldTouchButtons ? (builtKeyboard ?? { inline_keyboard: [] }) : undefined;
 
-  const editParams: TelegramEditMessageTextParams = directEntities
-    ? { entities: directEntities }
-    : {
-        parse_mode: "HTML",
-      };
+  const editParams: TelegramEditMessageTextParams = directEntities ? { entities: directEntities } : { parse_mode: "HTML" };
   if (opts.linkPreview === false) {
     editParams.link_preview_options = { is_disabled: true };
   }
@@ -1460,7 +1475,7 @@ export async function editMessageTelegram(
 
 function shouldAutoFoldTelegramText(params: {
   text: string;
-  entities?: TelegramTextEntityLike[];
+  entities?: MessageEntity[];
   textMode: "markdown" | "html";
 }): boolean {
   if (params.entities?.some((entity) => entity.type === "blockquote" || entity.type === "expandable_blockquote")) {
@@ -1472,11 +1487,15 @@ function shouldAutoFoldTelegramText(params: {
   return params.text.length > TELEGRAM_AUTO_EXPANDABLE_THRESHOLD;
 }
 
-function buildAutoFoldTelegramEntities(text: string): TelegramTextEntityLike[] | undefined {
+function buildAutoFoldTelegramEntities(text: string): MessageEntity[] | undefined {
   if (!text) {
     return undefined;
   }
-  return [{ offset: 0, length: text.length, type: "expandable_blockquote" }];
+  return [{ offset: 0, length: text.length, type: "expandable_blockquote" } as unknown as MessageEntity];
+}
+
+function coerceTelegramEntities(entities?: TelegramTextEntityLike[] | MessageEntity[] | null): MessageEntity[] | undefined {
+  return entities ? (entities as MessageEntity[]) : undefined;
 }
 
 function inferFilename(kind: MediaKind) {
