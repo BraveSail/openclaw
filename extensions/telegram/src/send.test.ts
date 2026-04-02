@@ -1785,6 +1785,27 @@ describe("sendMessageTelegram", () => {
       }),
     );
   });
+
+  it("auto-folds long Telegram sends into expandable blockquotes", async () => {
+    const chatId = "123";
+    const text = "长".repeat(101);
+    const sendMessage = vi.fn().mockResolvedValue({ message_id: 97, chat: { id: chatId } });
+    const api = { sendMessage } as unknown as { sendMessage: typeof sendMessage };
+
+    await sendMessageTelegram(chatId, text, {
+      token: "tok",
+      api,
+    });
+
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(sendMessage).toHaveBeenCalledWith(
+      chatId,
+      text,
+      expect.objectContaining({
+        entities: [{ offset: 0, length: 101, type: "expandable_blockquote" }],
+      }),
+    );
+  });
 });
 
 describe("reactMessageTelegram", () => {
@@ -2310,6 +2331,26 @@ describe("editMessageTelegram", () => {
       "fold me",
       expect.objectContaining({
         entities: [{ offset: 0, length: 7, type: "expandable_blockquote" }],
+      }),
+    );
+  });
+
+  it("auto-folds long Telegram edits into expandable blockquotes", async () => {
+    const text = "长".repeat(101);
+    botApi.editMessageText.mockResolvedValue({ message_id: 1, chat: { id: "123" } });
+
+    await editMessageTelegram("123", 1, text, {
+      token: "tok",
+      cfg: {},
+    });
+
+    expect(botApi.editMessageText).toHaveBeenCalledTimes(1);
+    expect(botApi.editMessageText).toHaveBeenCalledWith(
+      "123",
+      1,
+      text,
+      expect.objectContaining({
+        entities: [{ offset: 0, length: 101, type: "expandable_blockquote" }],
       }),
     );
   });

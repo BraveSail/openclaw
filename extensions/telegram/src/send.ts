@@ -191,6 +191,7 @@ const THREAD_NOT_FOUND_RE = /400:\s*Bad Request:\s*message thread not found/i;
 const MESSAGE_NOT_MODIFIED_RE =
   /400:\s*Bad Request:\s*message is not modified|MESSAGE_NOT_MODIFIED/i;
 const CHAT_NOT_FOUND_RE = /400: Bad Request: chat not found/i;
+const TELEGRAM_AUTO_EXPANDABLE_THRESHOLD = 100;
 const sendLogger = createSubsystemLogger("telegram/send");
 const diagLogger = createSubsystemLogger("telegram/diagnostic");
 const telegramClientOptionsCache = new Map<string, ApiClientOptions | undefined>();
@@ -671,8 +672,15 @@ export async function sendMessageTelegram(
   const renderHtmlText = (value: string) => renderTelegramHtmlText(value, { textMode, tableMode });
   const extractedDirectEntities =
     textMode === "html" ? extractTelegramSupportedHtmlEntities(text) : null;
-  const directEntities = opts.entities ?? extractedDirectEntities?.entities;
+  const precomputedDirectEntities = opts.entities ?? extractedDirectEntities?.entities;
   const directEntityText = extractedDirectEntities?.text ?? text;
+  const directEntities = shouldAutoFoldTelegramText({
+    text: directEntityText,
+    entities: precomputedDirectEntities,
+    textMode,
+  })
+    ? buildAutoFoldTelegramEntities(directEntityText)
+    : precomputedDirectEntities;
 
   // Resolve link preview setting from config (default: enabled).
   const linkPreviewEnabled = account.config.linkPreview ?? true;
@@ -1013,6 +1021,11 @@ export async function sendMessageTelegram(
   let textResult: { messageId: string; chatId: string };
   if (textMode === "html") {
     textResult = await sendChunkedText(text, "text send");
+  } else if (directEntities) {
+    textResult = await sendTelegramTextChunks(
+      [{ plainText: directEntityText, entities: directEntities }],
+      "text send",
+    );
   } else {
     textResult = await sendTelegramTextChunks(
       [{ plainText: opts.plainText ?? text, htmlText: renderHtmlText(text) }],
@@ -1402,8 +1415,15 @@ export async function editMessageTelegram(
   const htmlText = renderTelegramHtmlText(text, { textMode, tableMode });
   const extractedDirectEntities =
     textMode === "html" ? extractTelegramSupportedHtmlEntities(text) : null;
-  const directEntities = opts.entities ?? extractedDirectEntities?.entities;
+  const precomputedDirectEntities = opts.entities ?? extractedDirectEntities?.entities;
   const directEntityText = extractedDirectEntities?.text ?? text;
+  const directEntities = shouldAutoFoldTelegramText({
+    text: directEntityText,
+    entities: precomputedDirectEntities,
+    textMode,
+  })
+    ? buildAutoFoldTelegramEntities(directEntityText)
+    : precomputedDirectEntities;
 
   // Reply markup semantics:
   // - buttons === undefined → don't send reply_markup (keep existing)
@@ -1468,6 +1488,27 @@ export async function editMessageTelegram(
 
   logVerbose(`[telegram] Edited message ${messageId} in chat ${chatId}`);
   return { ok: true, messageId: String(messageId), chatId };
+}
+
+function shouldAutoFoldTelegramText(params: {
+  text: string;
+  entities?: TelegramTextEntityLike[];
+  textMode: "markdown" | "html";
+}): boolean {
+  if (params.entities?.some((entity) => entity.type === "blockquote" || entity.type === "expandable_blockquote")) {
+    return false;
+  }
+  if (params.textMode === "html" && /<blockquote(?:\s+expandable)?\b/i.test(params.text)) {
+    return false;
+  }
+  return params.text.length > TELEGRAM_AUTO_EXPANDABLE_THRESHOLD;
+}
+
+function buildAutoFoldTelegramEntities(text: string): TelegramTextEntityLike[] | undefined {
+  if (!text) {
+    return undefined;
+  }
+  return [{ offset: 0, length: text.length, type: "expandable_blockquote" }];
 }
 
 function inferFilename(kind: MediaKind) {
