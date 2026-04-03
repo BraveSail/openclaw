@@ -676,17 +676,23 @@ export async function sendMessageTelegram(
     accountId: account.accountId,
   });
   const renderHtmlText = (value: string) => renderTelegramHtmlText(value, { textMode, tableMode });
-  const explicitExtractedEntities = textMode === "html" ? extractTelegramSupportedHtmlEntities(text) : null;
+  const explicitExtractedEntities =
+    textMode === "html" ? extractTelegramSupportedHtmlEntities(text) : null;
   const explicitEntities: MessageEntity[] | undefined = coerceTelegramEntities(
     opts.entities ?? explicitExtractedEntities?.entities,
   );
-  const shouldAutoFold = !opts.entities && shouldAutoFoldTelegramText({
-    text,
-    entities: explicitEntities,
-    textMode,
-  });
+  const shouldAutoFold =
+    !opts.entities &&
+    shouldAutoFoldTelegramText({
+      text,
+      entities: explicitEntities,
+      textMode,
+      chatType: target.chatType,
+    });
   const autoFoldSource = shouldAutoFold ? renderHtmlText(text) : undefined;
-  const autoFoldExtracted = autoFoldSource ? extractTelegramSupportedHtmlEntities(autoFoldSource) : null;
+  const autoFoldExtracted = autoFoldSource
+    ? extractTelegramSupportedHtmlEntities(autoFoldSource)
+    : null;
   const directEntityText = shouldAutoFold
     ? (autoFoldExtracted?.text ?? text)
     : (explicitExtractedEntities?.text ?? text);
@@ -1399,6 +1405,7 @@ export async function editMessageTelegram(
     cfg: opts.cfg,
   });
   const rawTarget = String(chatIdInput);
+  const target = parseTelegramTarget(rawTarget);
   const chatId = await resolveAndPersistChatId({
     cfg,
     api,
@@ -1429,17 +1436,23 @@ export async function editMessageTelegram(
     accountId: account.accountId,
   });
   const htmlText = renderTelegramHtmlText(text, { textMode, tableMode });
-  const explicitExtractedEntities = textMode === "html" ? extractTelegramSupportedHtmlEntities(text) : null;
+  const explicitExtractedEntities =
+    textMode === "html" ? extractTelegramSupportedHtmlEntities(text) : null;
   const explicitEntities: MessageEntity[] | undefined = coerceTelegramEntities(
     opts.entities ?? explicitExtractedEntities?.entities,
   );
-  const shouldAutoFold = !opts.entities && shouldAutoFoldTelegramText({
-    text,
-    entities: explicitEntities,
-    textMode,
-  });
+  const shouldAutoFold =
+    !opts.entities &&
+    shouldAutoFoldTelegramText({
+      text,
+      entities: explicitEntities,
+      textMode,
+      chatType: target.chatType,
+    });
   const autoFoldSource = shouldAutoFold ? htmlText : undefined;
-  const autoFoldExtracted = autoFoldSource ? extractTelegramSupportedHtmlEntities(autoFoldSource) : null;
+  const autoFoldExtracted = autoFoldSource
+    ? extractTelegramSupportedHtmlEntities(autoFoldSource)
+    : null;
   const directEntityText = shouldAutoFold
     ? (autoFoldExtracted?.text ?? text)
     : (explicitExtractedEntities?.text ?? text);
@@ -1458,7 +1471,9 @@ export async function editMessageTelegram(
   const builtKeyboard = shouldTouchButtons ? buildInlineKeyboard(opts.buttons) : undefined;
   const replyMarkup = shouldTouchButtons ? (builtKeyboard ?? { inline_keyboard: [] }) : undefined;
 
-  const editParams: TelegramEditMessageTextParams = directEntities ? { entities: directEntities } : { parse_mode: "HTML" };
+  const editParams: TelegramEditMessageTextParams = directEntities
+    ? { entities: directEntities }
+    : { parse_mode: "HTML" };
   if (opts.linkPreview === false) {
     editParams.link_preview_options = { is_disabled: true };
   }
@@ -1515,8 +1530,16 @@ function shouldAutoFoldTelegramText(params: {
   text: string;
   entities?: MessageEntity[];
   textMode: "markdown" | "html";
+  chatType?: "direct" | "group" | "unknown";
 }): boolean {
-  if (params.entities?.some((entity) => entity.type === "blockquote" || entity.type === "expandable_blockquote")) {
+  if (params.chatType === "direct") {
+    return false;
+  }
+  if (
+    params.entities?.some(
+      (entity) => entity.type === "blockquote" || entity.type === "expandable_blockquote",
+    )
+  ) {
     return false;
   }
   if (params.textMode === "html" && /<blockquote(?:\s+expandable)?\b/i.test(params.text)) {
@@ -1529,10 +1552,14 @@ function buildAutoFoldTelegramEntities(text: string): MessageEntity[] | undefine
   if (!text) {
     return undefined;
   }
-  return [{ offset: 0, length: text.length, type: "expandable_blockquote" } as unknown as MessageEntity];
+  return [
+    { offset: 0, length: text.length, type: "expandable_blockquote" } as unknown as MessageEntity,
+  ];
 }
 
-function coerceTelegramEntities(entities?: TelegramTextEntityLike[] | MessageEntity[] | null): MessageEntity[] | undefined {
+function coerceTelegramEntities(
+  entities?: TelegramTextEntityLike[] | MessageEntity[] | null,
+): MessageEntity[] | undefined {
   return entities ? (entities as MessageEntity[]) : undefined;
 }
 
