@@ -41,6 +41,10 @@ function loadHelpAction() {
   return actionHelpPromise;
 }
 
+async function handleSubagentsHelpAction() {
+  return (await loadHelpAction()).handleSubagentsHelpAction();
+}
+
 function loadInfoAction() {
   actionInfoPromise ??= import("./commands-subagents/action-info.js");
   return actionInfoPromise;
