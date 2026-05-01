@@ -396,10 +396,12 @@ export const dispatchTelegramMessage = async ({
     replyToMode !== "off" && Object.keys(replyQuoteByMessageId).length > 0;
   const canStreamAnswerDraft =
     previewStreamingEnabled &&
-    !hasNativeQuoteReply &&
+    (!hasNativeQuoteReply || threadSpec?.scope === "dm") &&
     !accountBlockStreamingEnabled &&
     !forceBlockStreamingForReasoning;
-  const canStreamReasoningDraft = streamReasoningDraft;
+  const mergeReasoningIntoAnswerDraft = streamReasoningDraft && canStreamAnswerDraft;
+  const canStreamReasoningDraft = streamReasoningDraft && !mergeReasoningIntoAnswerDraft;
+  const singleMessagePreviewPerDispatch = canStreamAnswerDraft;
   const draftReplyToMessageId =
     replyToMode !== "off" && typeof msg.message_id === "number"
       ? (replyQuoteMessageId ?? msg.message_id)
@@ -466,7 +468,7 @@ export const dispatchTelegramMessage = async ({
     Boolean(answerLane.stream) && resolveChannelStreamingPreviewToolProgress(telegramCfg);
   let previewToolProgressSuppressed = false;
   let previewToolProgressLines: string[] = [];
-  const pushPreviewToolProgress = (line?: string) => {
+  const pushPreviewToolProgress = async (line?: string) => {
     if (!previewToolProgressEnabled || previewToolProgressSuppressed || !answerLane.stream) {
       return;
     }
@@ -484,7 +486,9 @@ export const dispatchTelegramMessage = async ({
       ...previewToolProgressLines.map((entry) => `• ${formatProgressAsMarkdownCode(entry)}`),
     ].join("\n");
     answerLane.lastPartialText = previewText;
+    answerLane.hasStreamedMessage = true;
     answerLane.stream.update(previewText);
+    await answerLane.stream.flush();
   };
   let splitReasoningOnNextStream = false;
   let skipNextAnswerMessageStartRotation = false;
@@ -503,7 +507,7 @@ export const dispatchTelegramMessage = async ({
     });
     return draftLaneEventQueue;
   };
-  type SplitLaneSegment = { lane: LaneName; text: string };
+  type SplitLaneSegment = { lane: LaneName; text: string; source: "answer" | "reasoning" };
   type SplitLaneSegmentsResult = {
     segments: SplitLaneSegment[];
     suppressedReasoningOnly: boolean;
@@ -513,10 +517,14 @@ export const dispatchTelegramMessage = async ({
     const segments: SplitLaneSegment[] = [];
     const suppressReasoning = resolvedReasoningLevel === "off";
     if (split.reasoningText && !suppressReasoning) {
-      segments.push({ lane: "reasoning", text: split.reasoningText });
+      segments.push({
+        lane: mergeReasoningIntoAnswerDraft ? "answer" : "reasoning",
+        text: split.reasoningText,
+        source: "reasoning",
+      });
     }
     if (split.answerText) {
-      segments.push({ lane: "answer", text: split.answerText });
+      segments.push({ lane: "answer", text: split.answerText, source: "answer" });
     }
     return {
       segments,
@@ -529,6 +537,15 @@ export const dispatchTelegramMessage = async ({
     lane.hasStreamedMessage = false;
   };
   const rotateAnswerLaneForNewAssistantMessage = async () => {
+    if (singleMessagePreviewPerDispatch) {
+      // Telegram previews are a per-turn status bubble, not one bubble per
+      // assistant message boundary. Keep editing the same message throughout
+      // the dispatch so tool progress, reasoning, retries, and finals cannot
+      // flood the chat with multiple bot messages.
+      activePreviewLifecycleByLane.answer = "transient";
+      retainPreviewOnCleanupByLane.answer = false;
+      return false;
+    }
     let didForceNewMessage = false;
     if (answerLane.hasStreamedMessage) {
       const materializedId = await answerLane.stream?.materialize?.();
@@ -579,12 +596,20 @@ export const dispatchTelegramMessage = async ({
   };
   const ingestDraftLaneSegments = async (text: string | undefined) => {
     const split = splitTextIntoLaneSegments(text);
+    if (
+      mergeReasoningIntoAnswerDraft &&
+      activePreviewLifecycleByLane.answer === "complete" &&
+      split.segments.length > 0 &&
+      split.segments.every((segment) => segment.source === "reasoning")
+    ) {
+      return;
+    }
     const hasAnswerSegment = split.segments.some((segment) => segment.lane === "answer");
     if (hasAnswerSegment && activePreviewLifecycleByLane.answer !== "transient") {
       skipNextAnswerMessageStartRotation = await rotateAnswerLaneForNewAssistantMessage();
     }
     for (const segment of split.segments) {
-      if (segment.lane === "reasoning") {
+      if (segment.source === "reasoning") {
         reasoningStepState.noteReasoningHint();
         reasoningStepState.noteReasoningDelivered();
       }
@@ -793,6 +818,7 @@ export const dispatchTelegramMessage = async ({
       markDelivered: () => {
         deliveryState.markDelivered();
       },
+      allowCompletedPreviewFinalEdits: singleMessagePreviewPerDispatch,
     });
 
     if (isDmTopic) {
@@ -875,7 +901,12 @@ export const dispatchTelegramMessage = async ({
               payload.channelData?.telegram as { buttons?: TelegramInlineButtons } | undefined
             )?.buttons;
             const split = splitTextIntoLaneSegments(payload.text);
-            const segments = split.segments;
+            const segments =
+              mergeReasoningIntoAnswerDraft &&
+              info.kind === "final" &&
+              split.segments.some((segment) => segment.source === "answer")
+                ? split.segments.filter((segment) => segment.source !== "reasoning")
+                : split.segments;
             const reply = resolveSendableOutboundReplyParts(payload);
             const _hasMedia = reply.hasMedia;
 
@@ -901,8 +932,16 @@ export const dispatchTelegramMessage = async ({
 
             for (const segment of segments) {
               if (
+                mergeReasoningIntoAnswerDraft &&
+                segment.source === "reasoning" &&
+                activePreviewLifecycleByLane.answer === "complete"
+              ) {
+                continue;
+              }
+              if (
                 segment.lane === "answer" &&
                 info.kind === "final" &&
+                !mergeReasoningIntoAnswerDraft &&
                 reasoningStepState.shouldBufferFinalAnswer()
               ) {
                 reasoningStepState.bufferFinalAnswer({
@@ -911,7 +950,7 @@ export const dispatchTelegramMessage = async ({
                 });
                 continue;
               }
-              if (segment.lane === "reasoning") {
+              if (segment.source === "reasoning") {
                 reasoningStepState.noteReasoningHint();
               }
               const result = await deliverLaneText({
@@ -920,15 +959,17 @@ export const dispatchTelegramMessage = async ({
                 payload,
                 infoKind: info.kind,
                 previewButtons,
-                allowPreviewUpdateForNonFinal: segment.lane === "reasoning",
+                allowPreviewUpdateForNonFinal: segment.source === "reasoning",
               });
               if (info.kind === "final") {
                 emitPreviewFinalizedHook(result);
               }
-              if (segment.lane === "reasoning") {
+              if (segment.source === "reasoning") {
                 if (result.kind !== "skipped") {
                   reasoningStepState.noteReasoningDelivered();
-                  await flushBufferedFinalAnswer();
+                  if (!mergeReasoningIntoAnswerDraft) {
+                    await flushBufferedFinalAnswer();
+                  }
                 }
                 continue;
               }
@@ -1025,17 +1066,18 @@ export const dispatchTelegramMessage = async ({
                     await ingestDraftLaneSegments(payload.text);
                   })
               : undefined,
-          onReasoningStream: reasoningLane.stream
-            ? (payload) =>
-                enqueueDraftLaneEvent(async () => {
-                  if (splitReasoningOnNextStream) {
-                    reasoningLane.stream?.forceNewMessage();
-                    resetDraftLaneState(reasoningLane);
-                    splitReasoningOnNextStream = false;
-                  }
-                  await ingestDraftLaneSegments(payload.text);
-                })
-            : undefined,
+          onReasoningStream:
+            streamReasoningDraft && (answerLane.stream || reasoningLane.stream)
+              ? (payload) =>
+                  enqueueDraftLaneEvent(async () => {
+                    if (!mergeReasoningIntoAnswerDraft && splitReasoningOnNextStream) {
+                      reasoningLane.stream?.forceNewMessage();
+                      resetDraftLaneState(reasoningLane);
+                      splitReasoningOnNextStream = false;
+                    }
+                    await ingestDraftLaneSegments(payload.text);
+                  })
+              : undefined,
           onAssistantMessageStart: answerLane.stream
             ? () =>
                 enqueueDraftLaneEvent(async () => {
@@ -1059,56 +1101,72 @@ export const dispatchTelegramMessage = async ({
                   retainPreviewOnCleanupByLane.answer = false;
                 })
             : undefined,
-          onReasoningEnd: reasoningLane.stream
-            ? () =>
-                enqueueDraftLaneEvent(async () => {
-                  splitReasoningOnNextStream = reasoningLane.hasStreamedMessage;
-                  previewToolProgressSuppressed = false;
-                  previewToolProgressLines = [];
-                })
-            : undefined,
+          onReasoningEnd:
+            streamReasoningDraft && (answerLane.stream || reasoningLane.stream)
+              ? () =>
+                  enqueueDraftLaneEvent(async () => {
+                    splitReasoningOnNextStream =
+                      !mergeReasoningIntoAnswerDraft && reasoningLane.hasStreamedMessage;
+                    previewToolProgressSuppressed = false;
+                    previewToolProgressLines = [];
+                  })
+              : undefined,
           suppressDefaultToolProgressMessages: Boolean(answerLane.stream),
           onToolStart: async (payload) => {
             const toolName = payload.name?.trim();
+            const previewUpdate = enqueueDraftLaneEvent(async () => {
+              await pushPreviewToolProgress(toolName ? `tool: ${toolName}` : "tool running");
+            });
             if (statusReactionController && toolName) {
               await statusReactionController.setTool(toolName);
             }
-            pushPreviewToolProgress(toolName ? `tool: ${toolName}` : "tool running");
+            await previewUpdate;
           },
-          onItemEvent: async (payload) => {
-            pushPreviewToolProgress(
-              payload.progressText ?? payload.summary ?? payload.title ?? payload.name,
-            );
-          },
+          onItemEvent: async (payload) =>
+            enqueueDraftLaneEvent(async () => {
+              await pushPreviewToolProgress(
+                payload.progressText ?? payload.summary ?? payload.title ?? payload.name,
+              );
+            }),
           onPlanUpdate: async (payload) => {
             if (payload.phase !== "update") {
               return;
             }
-            pushPreviewToolProgress(payload.explanation ?? payload.steps?.[0] ?? "planning");
+            await enqueueDraftLaneEvent(async () => {
+              await pushPreviewToolProgress(
+                payload.explanation ?? payload.steps?.[0] ?? "planning",
+              );
+            });
           },
           onApprovalEvent: async (payload) => {
             if (payload.phase !== "requested") {
               return;
             }
-            pushPreviewToolProgress(
-              payload.command ? `approval: ${payload.command}` : "approval requested",
-            );
+            await enqueueDraftLaneEvent(async () => {
+              await pushPreviewToolProgress(
+                payload.command ? `approval: ${payload.command}` : "approval requested",
+              );
+            });
           },
           onCommandOutput: async (payload) => {
             if (payload.phase !== "end") {
               return;
             }
-            pushPreviewToolProgress(
-              payload.name
-                ? `${payload.name}${payload.exitCode === 0 ? " ✓" : payload.exitCode != null ? ` (exit ${payload.exitCode})` : ""}`
-                : payload.title,
-            );
+            await enqueueDraftLaneEvent(async () => {
+              await pushPreviewToolProgress(
+                payload.name
+                  ? `${payload.name}${payload.exitCode === 0 ? " ✓" : payload.exitCode != null ? ` (exit ${payload.exitCode})` : ""}`
+                  : payload.title,
+              );
+            });
           },
           onPatchSummary: async (payload) => {
             if (payload.phase !== "end") {
               return;
             }
-            pushPreviewToolProgress(payload.summary ?? payload.title ?? "patch applied");
+            await enqueueDraftLaneEvent(async () => {
+              await pushPreviewToolProgress(payload.summary ?? payload.title ?? "patch applied");
+            });
           },
           onCompactionStart:
             statusReactionController || answerLane.stream

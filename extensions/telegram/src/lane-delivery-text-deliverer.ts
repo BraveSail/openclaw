@@ -94,6 +94,14 @@ type CreateLaneTextDelivererParams = {
   deletePreviewMessage: (messageId: number) => Promise<void>;
   log: (message: string) => void;
   markDelivered: () => void;
+  /**
+   * When enabled, later text finals in the same dispatch keep editing the
+   * already-finalized preview instead of falling back to fresh sends. This is
+   * used by Telegram's single-message preview contract: one user turn should
+   * have at most one visible bot message, with progress/reasoning/final content
+   * replacing that message in-place.
+   */
+  allowCompletedPreviewFinalEdits?: boolean;
   now?: () => number;
 };
 
@@ -206,9 +214,13 @@ export function createLaneTextDeliverer(params: CreateLaneTextDelivererParams) {
   const isDraftPreviewLane = (lane: DraftLaneState) => lane.stream?.previewMode?.() === "draft";
   const isMessagePreviewLane = (lane: DraftLaneState) => !isDraftPreviewLane(lane);
   const shouldUseFreshFinalForLane = (lane: DraftLaneState) =>
-    isMessagePreviewLane(lane) && isLongLivedPreview(lane.stream?.visibleSinceMs?.(), readNow());
+    params.allowCompletedPreviewFinalEdits !== true &&
+    isMessagePreviewLane(lane) &&
+    isLongLivedPreview(lane.stream?.visibleSinceMs?.(), readNow());
   const shouldUseFreshFinalForPreview = (lane: DraftLaneState, visibleSinceMs?: number) =>
-    isMessagePreviewLane(lane) && isLongLivedPreview(visibleSinceMs, readNow());
+    params.allowCompletedPreviewFinalEdits !== true &&
+    isMessagePreviewLane(lane) &&
+    isLongLivedPreview(visibleSinceMs, readNow());
   const clearActivePreviewAfterFreshFinal = async (lane: DraftLaneState, laneName: LaneName) => {
     try {
       await lane.stream?.clear();
@@ -413,9 +425,12 @@ export function createLaneTextDeliverer(params: CreateLaneTextDelivererParams) {
       stopBeforeEdit,
       context,
     });
-    if (previewTargetBeforeStop.stopCreatesFirstPreview && lane.hasStreamedMessage) {
-      // Final stop() can create the first visible preview message.
-      // Prime pending text so the stop flush sends the final text snapshot.
+    if (previewTargetBeforeStop.stopCreatesFirstPreview) {
+      // Final stop() can create the first visible preview message. Prime
+      // pending text so even final-only turns are tracked as the preview
+      // message and can be edited by later same-dispatch updates instead of
+      // falling back to untracked fresh sends.
+      lane.hasStreamedMessage = true;
       lane.stream.update(text);
       await params.stopDraftLane(lane);
       const previewTargetAfterStop = resolvePreviewTarget({
@@ -564,7 +579,12 @@ export function createLaneTextDeliverer(params: CreateLaneTextDelivererParams) {
           return archivedResult;
         }
       }
-      if (canEditViaPreview && params.activePreviewLifecycleByLane[laneName] === "transient") {
+      const canEditActivePreviewForFinal =
+        canEditViaPreview &&
+        (params.activePreviewLifecycleByLane[laneName] === "transient" ||
+          (params.allowCompletedPreviewFinalEdits === true &&
+            typeof lane.stream?.messageId() === "number"));
+      if (canEditActivePreviewForFinal) {
         await params.flushDraftLane(lane);
         if (laneName === "answer") {
           const archivedResultAfterFlush = await consumeArchivedAnswerPreviewForFinal({
