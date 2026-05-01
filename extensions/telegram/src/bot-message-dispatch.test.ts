@@ -424,6 +424,9 @@ describe("dispatchTelegramMessage draft streaming", () => {
         minInitialChars: 30,
       }),
     );
+    expect(createTelegramDraftStream.mock.calls[0]?.[0]).not.toEqual(
+      expect.objectContaining({ previewTransport: "message" }),
+    );
     expect(draftStream.update).toHaveBeenCalledWith("Hello");
     expect(deliverReplies).toHaveBeenCalledWith(
       expect.objectContaining({
