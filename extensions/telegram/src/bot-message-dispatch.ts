@@ -1111,7 +1111,8 @@ export const dispatchTelegramMessage = async ({
                     previewToolProgressLines = [];
                   })
               : undefined,
-          suppressDefaultToolProgressMessages: Boolean(answerLane.stream),
+          suppressDefaultToolProgressMessages:
+            !previewStreamingEnabled || Boolean(answerLane.stream),
           onToolStart: async (payload) => {
             const toolName = payload.name?.trim();
             const previewUpdate = enqueueDraftLaneEvent(async () => {
