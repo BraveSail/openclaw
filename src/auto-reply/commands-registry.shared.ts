@@ -2,11 +2,12 @@ import { normalizeOptionalLowercaseString } from "../shared/string-coerce.js";
 import { COMMAND_ARG_FORMATTERS } from "./commands-args.js";
 import type {
   ChatCommandDefinition,
+  CommandArgChoiceContext,
   CommandCategory,
   CommandScope,
   CommandTier,
 } from "./commands-registry.types.js";
-import { listThinkingLevels } from "./thinking.js";
+import { listThinkingLevels } from "./thinking.shared.js";
 
 type DefineChatCommandInput = {
   key: string;
@@ -24,6 +25,14 @@ type DefineChatCommandInput = {
   /** Progressive disclosure tier. Defaults to "standard". */
   tier?: CommandTier;
 };
+
+export function resolveThinkCommandLevelChoices({
+  provider,
+  model,
+  catalog,
+}: CommandArgChoiceContext) {
+  return listThinkingLevels(provider, model, catalog);
+}
 
 export function defineChatCommand(command: DefineChatCommandInput): ChatCommandDefinition {
   const aliases = (command.textAliases ?? (command.textAlias ? [command.textAlias] : []))
@@ -714,7 +723,7 @@ export function buildBuiltinChatCommands(): ChatCommandDefinition[] {
           name: "level",
           description: "Thinking level",
           type: "string",
-          choices: ({ provider, model }) => listThinkingLevels(provider, model),
+          choices: resolveThinkCommandLevelChoices,
         },
       ],
       argsMenu: "auto",

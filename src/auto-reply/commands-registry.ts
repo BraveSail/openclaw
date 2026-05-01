@@ -14,6 +14,7 @@ import {
 } from "./commands-registry-list.js";
 import { normalizeCommandBody, resolveTextCommand } from "./commands-registry-normalize.js";
 import { getChatCommands, getNativeCommandSurfaces } from "./commands-registry.data.js";
+import { resolveThinkCommandLevelChoices } from "./commands-registry.shared.js";
 import type {
   ChatCommandDefinition,
   CommandArgChoiceContext,
@@ -26,6 +27,8 @@ import type {
   NativeCommandSpec,
   ShouldHandleTextCommandsParams,
 } from "./commands-registry.types.js";
+import { listThinkingLevels as listRuntimeThinkingLevels } from "./thinking.js";
+import type { ThinkingCatalogEntry } from "./thinking.shared.js";
 
 export {
   isCommandEnabled,
@@ -274,6 +277,9 @@ export function resolveCommandArgChoices(params: {
           command,
           arg,
         };
+        if (provided === resolveThinkCommandLevelChoices) {
+          return listRuntimeThinkingLevels(context.provider, context.model, context.catalog);
+        }
         return provided(context);
       })();
   return raw.map((choice) =>

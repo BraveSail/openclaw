@@ -86,11 +86,30 @@ export function normalizeThinkLevel(raw?: string | null): ThinkLevel | undefined
   return undefined;
 }
 
+function catalogSupportsXHigh(compat: ThinkingCatalogEntry["compat"]): boolean {
+  const efforts = compat?.supportedReasoningEfforts;
+  if (!Array.isArray(efforts)) {
+    return false;
+  }
+  return efforts.some((effort) => normalizeThinkLevel(effort) === "xhigh");
+}
+
 export function listThinkingLevels(
-  _provider?: string | null,
-  _model?: string | null,
+  provider?: string | null,
+  model?: string | null,
+  catalog?: ThinkingCatalogEntry[],
 ): ThinkLevel[] {
-  return [...NO_THINKING_LEVELS];
+  const levels = [...NO_THINKING_LEVELS];
+  const providerKey = normalizeOptionalLowercaseString(provider) ?? "";
+  const modelId = typeof model === "string" ? model.trim() : "";
+  const candidate = catalog?.find(
+    (entry) =>
+      normalizeOptionalLowercaseString(entry.provider) === providerKey && entry.id === modelId,
+  );
+  if (candidate && catalogSupportsXHigh(candidate.compat) && !levels.includes("xhigh")) {
+    levels.push("xhigh");
+  }
+  return levels;
 }
 
 export function listThinkingLevelLabels(provider?: string | null, model?: string | null): string[] {
