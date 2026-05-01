@@ -1,3 +1,4 @@
+import { resolveOpenAISupportedReasoningEfforts } from "../agents/openai-reasoning-effort.js";
 import { normalizeProviderId } from "../agents/provider-id.js";
 import {
   BASE_THINKING_LEVELS,
@@ -130,6 +131,20 @@ function appendProfileLevel(profile: ResolvedThinkingProfile, id: ThinkLevel) {
   profile.levels = profile.levels.toSorted((a, b) => a.rank - b.rank);
 }
 
+function supportsOpenAIXHighThinkingFallback(context: {
+  normalizedProvider: string;
+  modelId: string;
+  reasoning?: boolean;
+}): boolean {
+  if (context.reasoning !== true) {
+    return false;
+  }
+  return resolveOpenAISupportedReasoningEfforts({
+    provider: context.normalizedProvider,
+    id: context.modelId,
+  }).includes("xhigh");
+}
+
 export function resolveThinkingProfile(params: {
   provider?: string | null;
   model?: string | null;
@@ -178,7 +193,8 @@ export function resolveThinkingProfile(params: {
     resolveProviderXHighThinking({
       provider: context.normalizedProvider,
       context: policyContext,
-    }) === true
+    }) === true ||
+    supportsOpenAIXHighThinkingFallback(context)
   ) {
     appendProfileLevel(profile, "xhigh");
   }

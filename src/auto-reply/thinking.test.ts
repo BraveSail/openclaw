@@ -134,6 +134,12 @@ describe("listThinkingLevels", () => {
     expect(listThinkingLevels("openai", "gpt-5.4")).not.toContain("max");
   });
 
+  it("uses OpenAI reasoning effort metadata as an xhigh fallback for configured providers", () => {
+    const catalog = [{ provider: "cliproxyapi", id: "gpt-5.5", name: "gpt-5.5", reasoning: true }];
+
+    expect(listThinkingLevels("cliproxyapi", "gpt-5.5", catalog)).toContain("xhigh");
+  });
+
   it("does not include adaptive without provider support", () => {
     expect(listThinkingLevels(undefined, "gpt-4.1-mini")).not.toContain("adaptive");
     expect(listThinkingLevels("openai", "gpt-5.4")).not.toContain("adaptive");
