@@ -1357,6 +1357,7 @@ describe("dispatchTelegramMessage draft streaming", () => {
     dispatchReplyWithBufferedBlockDispatcher.mockImplementation(
       async ({ dispatcherOptions, replyOptions }) => {
         await replyOptions?.onReasoningStream?.({ text: "<think>Thinking</think>" });
+        await replyOptions?.onReasoningEnd?.();
         await dispatcherOptions.deliver({ text: "Answer" }, { kind: "final" });
         return { queuedFinal: true };
       },
@@ -1365,10 +1366,8 @@ describe("dispatchTelegramMessage draft streaming", () => {
     await dispatchWithContext({ context: createReasoningStreamContext() });
 
     expect(reasoningDraftStream.update).toHaveBeenCalledWith("Reasoning:\n_Thinking_");
+    expect(reasoningDraftStream.materialize).toHaveBeenCalled();
     expect(answerDraftStream.update).toHaveBeenCalledWith("Answer");
-    expect(mockCallArg(createTelegramDraftStream, 1)).toMatchObject({
-      previewTransport: "message",
-    });
     expect(deliverReplies).not.toHaveBeenCalled();
   });
 
@@ -1380,6 +1379,7 @@ describe("dispatchTelegramMessage draft streaming", () => {
     dispatchReplyWithBufferedBlockDispatcher.mockImplementation(
       async ({ dispatcherOptions, replyOptions }) => {
         await replyOptions?.onReasoningStream?.({ text: "<think>Thinking</think>" });
+        await replyOptions?.onReasoningEnd?.();
         await dispatcherOptions.deliver({ text: "Answer" }, { kind: "final" });
         return { queuedFinal: true };
       },
@@ -1396,6 +1396,7 @@ describe("dispatchTelegramMessage draft streaming", () => {
     });
 
     expect(reasoningDraftStream.update).toHaveBeenCalledWith("Reasoning:\n_Thinking_");
+    expect(reasoningDraftStream.materialize).toHaveBeenCalled();
     expect(answerDraftStream.update).toHaveBeenCalledWith("Answer");
   });
 

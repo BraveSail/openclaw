@@ -584,10 +584,7 @@ export const dispatchTelegramMessage = async ({
   };
   const lanes: Record<LaneName, DraftLaneState> = {
     answer: createDraftLane("answer", canStreamAnswerDraft),
-    // Reasoning stream previews should remain visible after reopening Telegram.
-    // DM draft transport is intentionally ephemeral/client-draft-like, so keep
-    // reasoning on the persistent sendMessage/editMessage preview transport.
-    reasoning: createDraftLane("reasoning", canStreamReasoningDraft, "message"),
+    reasoning: createDraftLane("reasoning", canStreamReasoningDraft),
   };
   const answerLane = lanes.answer;
   const reasoningLane = lanes.reasoning;
@@ -778,6 +775,18 @@ export const dispatchTelegramMessage = async ({
     streamToolProgressSuppressed = true;
     streamToolProgressLines = [];
     return true;
+  };
+  const materializeReasoningLane = async () => {
+    if (!reasoningLane.stream || !reasoningLane.hasStreamedMessage || reasoningLane.finalized) {
+      return;
+    }
+    const materializedMessageId = await reasoningLane.stream.materialize?.();
+    if (typeof materializedMessageId === "number") {
+      reasoningLane.finalized = true;
+      deliveryState.markDelivered();
+      return;
+    }
+    logVerbose("telegram: reasoning draft preview materialize produced no message id");
   };
   const prepareAnswerLaneForText = async () => {
     if (await rotateAnswerLaneAfterToolProgress()) {
@@ -1468,6 +1477,7 @@ export const dispatchTelegramMessage = async ({
                   onReasoningEnd: reasoningLane.stream
                     ? () =>
                         enqueueDraftLaneEvent(async () => {
+                          await materializeReasoningLane();
                           splitReasoningOnNextStream = reasoningLane.hasStreamedMessage;
                           streamToolProgressSuppressed = false;
                           streamToolProgressLines = [];
@@ -1601,6 +1611,9 @@ export const dispatchTelegramMessage = async ({
       runtime.error?.(danger(`telegram dispatch failed: ${String(err)}`));
     } finally {
       await draftLaneEventQueue;
+      if (!isDispatchSuperseded()) {
+        await materializeReasoningLane();
+      }
       progressDraftGate.cancel();
       const lanesToCleanup: Array<{ laneName: LaneName; lane: DraftLaneState }> = [
         { laneName: "answer", lane: answerLane },
