@@ -546,13 +546,18 @@ export const dispatchTelegramMessage = async ({
   const draftMinInitialChars = streamMode === "progress" ? 0 : DRAFT_MIN_INITIAL_CHARS;
   const progressSeed = `${route.accountId}:${chatId}:${threadSpec.id ?? ""}`;
   const mediaLocalRoots = getAgentScopedMediaLocalRoots(cfg, route.agentId);
-  const createDraftLane = (laneName: LaneName, enabled: boolean): DraftLaneState => {
+  const createDraftLane = (
+    laneName: LaneName,
+    enabled: boolean,
+    previewTransport?: "auto" | "message" | "draft",
+  ): DraftLaneState => {
     const stream = enabled
       ? (telegramDeps.createTelegramDraftStream ?? createTelegramDraftStream)({
           api: bot.api,
           chatId,
           maxChars: draftMaxChars,
           thread: threadSpec,
+          previewTransport,
           replyToMessageId: draftReplyToMessageId,
           minInitialChars: draftMinInitialChars,
           renderText: renderStreamText,
@@ -579,7 +584,10 @@ export const dispatchTelegramMessage = async ({
   };
   const lanes: Record<LaneName, DraftLaneState> = {
     answer: createDraftLane("answer", canStreamAnswerDraft),
-    reasoning: createDraftLane("reasoning", canStreamReasoningDraft),
+    // Reasoning stream previews should remain visible after reopening Telegram.
+    // DM draft transport is intentionally ephemeral/client-draft-like, so keep
+    // reasoning on the persistent sendMessage/editMessage preview transport.
+    reasoning: createDraftLane("reasoning", canStreamReasoningDraft, "message"),
   };
   const answerLane = lanes.answer;
   const reasoningLane = lanes.reasoning;

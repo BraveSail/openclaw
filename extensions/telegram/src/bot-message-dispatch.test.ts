@@ -1366,6 +1366,9 @@ describe("dispatchTelegramMessage draft streaming", () => {
 
     expect(reasoningDraftStream.update).toHaveBeenCalledWith("Reasoning:\n_Thinking_");
     expect(answerDraftStream.update).toHaveBeenCalledWith("Answer");
+    expect(mockCallArg(createTelegramDraftStream, 1)).toMatchObject({
+      previewTransport: "message",
+    });
     expect(deliverReplies).not.toHaveBeenCalled();
   });
 
