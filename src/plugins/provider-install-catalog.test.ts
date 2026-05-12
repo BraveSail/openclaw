@@ -5,6 +5,8 @@ type LoadOpenClawProviderIndex =
 type LoadPluginRegistrySnapshot = typeof import("./plugin-registry.js").loadPluginRegistrySnapshot;
 type ResolveManifestProviderAuthChoices =
   typeof import("./provider-auth-choices.js").resolveManifestProviderAuthChoices;
+type ListOfficialExternalProviderCatalogEntries =
+  typeof import("./official-external-plugin-catalog.js").listOfficialExternalProviderCatalogEntries;
 
 const loadOpenClawProviderIndex = vi.hoisted(() =>
   vi.fn<LoadOpenClawProviderIndex>(() => ({ version: 1, providers: {} })),
@@ -43,6 +45,19 @@ vi.mock("./provider-auth-choices.js", () => ({
   resolveManifestProviderAuthChoices,
 }));
 
+const listOfficialExternalProviderCatalogEntries = vi.hoisted(() =>
+  vi.fn<ListOfficialExternalProviderCatalogEntries>(() => []),
+);
+vi.mock("./official-external-plugin-catalog.js", async () => {
+  const actual = await vi.importActual<typeof import("./official-external-plugin-catalog.js")>(
+    "./official-external-plugin-catalog.js",
+  );
+  return {
+    ...actual,
+    listOfficialExternalProviderCatalogEntries,
+  };
+});
+
 import {
   resolveProviderInstallCatalogEntries,
   resolveProviderInstallCatalogEntry,
@@ -64,6 +79,7 @@ describe("provider install catalog", () => {
       diagnostics: [],
     });
     resolveManifestProviderAuthChoices.mockReturnValue([]);
+    listOfficialExternalProviderCatalogEntries.mockReturnValue([]);
   });
 
   it("merges manifest auth-choice metadata with registry install metadata", () => {
@@ -308,7 +324,15 @@ describe("provider install catalog", () => {
       },
     ]);
 
-    expect(resolveProviderInstallCatalogEntry("vllm")).toMatchObject({
+    expect(resolveProviderInstallCatalogEntry("vllm")).toEqual({
+      pluginId: "vllm",
+      providerId: "vllm",
+      methodId: "server",
+      choiceId: "vllm",
+      choiceLabel: "vLLM",
+      groupLabel: "vLLM",
+      label: "vLLM",
+      origin: "global",
       install: {
         clawhubSpec: "clawhub:openclaw/vllm@2026.5.2",
         defaultChoice: "clawhub",
@@ -377,7 +401,7 @@ describe("provider install catalog", () => {
       },
     ]);
 
-    expect(resolveProviderInstallCatalogEntries()).toEqual([]);
+    expect(resolveProviderInstallCatalogEntries()).toStrictEqual([]);
   });
 
   it("skips untrusted workspace package install metadata when the plugin is disabled", () => {
@@ -433,7 +457,7 @@ describe("provider install catalog", () => {
         },
         includeUntrustedWorkspacePlugins: false,
       }),
-    ).toEqual([]);
+    ).toStrictEqual([]);
   });
 
   it("surfaces provider-index install metadata when the provider plugin is not installed", () => {
@@ -494,6 +518,69 @@ describe("provider install catalog", () => {
           pinState: "exact-with-integrity",
         },
         warnings: [],
+      },
+    });
+  });
+
+  it("surfaces official external provider install metadata when the provider plugin is not installed", () => {
+    listOfficialExternalProviderCatalogEntries.mockReturnValue([
+      {
+        name: "@openclaw/codex",
+        source: "official",
+        kind: "provider",
+        openclaw: {
+          plugin: { id: "codex", label: "Codex" },
+          providers: [
+            {
+              id: "codex",
+              name: "Codex",
+              authChoices: [
+                {
+                  method: "app-server",
+                  choiceId: "codex",
+                  choiceLabel: "Codex app-server",
+                  choiceHint: "Use the Codex app-server runtime.",
+                  groupId: "codex",
+                  groupLabel: "Codex",
+                  onboardingScopes: ["text-inference"],
+                },
+              ],
+            },
+          ],
+          install: {
+            npmSpec: "@openclaw/codex",
+            defaultChoice: "npm",
+          },
+        },
+      },
+    ]);
+
+    expect(resolveProviderInstallCatalogEntry("codex")).toEqual({
+      pluginId: "codex",
+      providerId: "codex",
+      methodId: "app-server",
+      choiceId: "codex",
+      choiceLabel: "Codex app-server",
+      choiceHint: "Use the Codex app-server runtime.",
+      groupId: "codex",
+      groupLabel: "Codex",
+      onboardingScopes: ["text-inference"],
+      label: "Codex",
+      origin: "bundled",
+      install: {
+        npmSpec: "@openclaw/codex",
+        defaultChoice: "npm",
+      },
+      installSource: {
+        defaultChoice: "npm",
+        npm: {
+          spec: "@openclaw/codex",
+          packageName: "@openclaw/codex",
+          selectorKind: "none",
+          exactVersion: false,
+          pinState: "floating-without-integrity",
+        },
+        warnings: ["npm-spec-floating", "npm-spec-missing-integrity"],
       },
     });
   });
@@ -719,8 +806,14 @@ describe("provider install catalog", () => {
 
     expect(entries.map((entry) => entry.choiceId)).toEqual(["groq-api-key", "vllm-server"]);
     expect(resolveProviderInstallCatalogEntry("moonshot-api-key")).toBeUndefined();
-    expect(resolveProviderInstallCatalogEntry("vllm-server")).toMatchObject({
+    expect(resolveProviderInstallCatalogEntry("vllm-server")).toEqual({
       pluginId: "vllm",
+      providerId: "vllm",
+      methodId: "server",
+      choiceId: "vllm-server",
+      choiceLabel: "vLLM server",
+      label: "vLLM",
+      origin: "bundled",
       install: {
         clawhubSpec: "clawhub:openclaw/vllm@2026.5.2",
         npmSpec: "@openclaw/plugin-vllm@2026.5.2",
@@ -730,10 +823,19 @@ describe("provider install catalog", () => {
         defaultChoice: "clawhub",
         clawhub: {
           spec: "clawhub:openclaw/vllm@2026.5.2",
+          packageName: "openclaw/vllm",
+          version: "2026.5.2",
+          exactVersion: true,
         },
         npm: {
           spec: "@openclaw/plugin-vllm@2026.5.2",
+          packageName: "@openclaw/plugin-vllm",
+          selector: "2026.5.2",
+          selectorKind: "exact-version",
+          exactVersion: true,
+          pinState: "exact-without-integrity",
         },
+        warnings: ["npm-spec-missing-integrity"],
       },
     });
   });
