@@ -1,3 +1,4 @@
+import { listAgentEntries, resolveSessionAgentId } from "../../agents/agent-scope.js";
 import { loadModelCatalog } from "../../agents/model-catalog.js";
 import {
   resolveThinkingDefaultWithRuntimeCatalog,
@@ -9,7 +10,13 @@ import { normalizeOptionalString } from "../../shared/string-coerce.js";
 import type { GetReplyOptions } from "../get-reply-options.types.js";
 import type { ReplyPayload } from "../reply-payload.js";
 import type { MsgContext } from "../templating.js";
-import { normalizeThinkLevel, type ThinkLevel } from "../thinking.js";
+import {
+  normalizeElevatedLevel,
+  normalizeReasoningLevel,
+  normalizeThinkLevel,
+  normalizeVerboseLevel,
+  type ThinkLevel,
+} from "../thinking.js";
 import { buildCommandContext } from "./commands-context.js";
 import { clearInlineDirectives } from "./get-reply-directives-utils.js";
 import { resolveReplyDirectives } from "./get-reply-directives.js";
@@ -111,7 +118,33 @@ export async function maybeResolveNativeSlashCommandFastReply(params: {
       });
       return resolvedDefaultThinkingLevel;
     };
+    const statusAgentId = resolveSessionAgentId({
+      sessionKey: sessionState.sessionKey,
+      config: params.cfg,
+    });
+    const agentEntry = listAgentEntries(params.cfg).find(
+      (entry) => entry.id?.trim().toLowerCase() === statusAgentId,
+    );
     const resolvedThinkLevel = normalizeThinkLevel(targetSessionEntry?.thinkingLevel);
+    const resolvedFastMode =
+      typeof targetSessionEntry?.fastMode === "boolean"
+        ? targetSessionEntry.fastMode
+        : typeof agentEntry?.fastModeDefault === "boolean"
+          ? agentEntry.fastModeDefault
+          : undefined;
+    const resolvedVerboseLevel =
+      normalizeVerboseLevel(targetSessionEntry?.verboseLevel) ??
+      normalizeVerboseLevel(params.agentCfg?.verboseDefault) ??
+      "off";
+    const resolvedReasoningLevel =
+      normalizeReasoningLevel(targetSessionEntry?.reasoningLevel) ??
+      normalizeReasoningLevel(agentEntry?.reasoningDefault) ??
+      normalizeReasoningLevel(params.agentCfg?.reasoningDefault) ??
+      "off";
+    const resolvedElevatedLevel =
+      normalizeElevatedLevel(targetSessionEntry?.elevatedLevel) ??
+      normalizeElevatedLevel(params.agentCfg?.elevatedDefault) ??
+      "off";
     const { buildStatusReply } = await loadStatusCommandRuntime();
     return {
       handled: true,
@@ -127,9 +160,10 @@ export async function maybeResolveNativeSlashCommandFastReply(params: {
         model: params.model,
         workspaceDir: params.workspaceDir,
         resolvedThinkLevel,
-        resolvedVerboseLevel: "off",
-        resolvedReasoningLevel: "off",
-        resolvedElevatedLevel: "off",
+        resolvedFastMode,
+        resolvedVerboseLevel,
+        resolvedReasoningLevel,
+        resolvedElevatedLevel,
         resolveDefaultThinkingLevel,
         isGroup: sessionState.isGroup,
         defaultGroupActivation: () => "always",
