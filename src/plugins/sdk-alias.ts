@@ -265,6 +265,7 @@ const cachedPluginSdkScopedAliasMaps = new PluginLruCache<Record<string, string>
   MAX_PLUGIN_LOADER_ALIAS_CACHE_ENTRIES,
 );
 const PLUGIN_SDK_PACKAGE_NAMES = ["openclaw/plugin-sdk", "@openclaw/plugin-sdk"] as const;
+const OFFICIAL_CODEX_PLUGIN_PACKAGE_NAME = "@openclaw/codex";
 const CODEX_NATIVE_TASK_RUNTIME_PLUGIN_SDK_SUBPATH = "codex-native-task-runtime";
 const PLUGIN_SDK_SOURCE_CANDIDATE_EXTENSIONS = [
   ".ts",
@@ -471,25 +472,12 @@ function isBundledCodexPluginModulePath(params: { packageRoot: string; modulePat
   );
 }
 
-function isModulePathInsidePackageNamed(params: {
-  modulePath: string;
-  packageName: string;
-  maxDepth?: number;
-}) {
-  let cursor = path.dirname(path.resolve(params.modulePath));
-  const maxDepth = params.maxDepth ?? 12;
-  for (let i = 0; i < maxDepth; i += 1) {
-    const parsed = tryReadJsonSync<{ name?: unknown }>(path.join(cursor, "package.json"));
-    if (parsed && typeof parsed.name === "string") {
-      return parsed.name.trim() === params.packageName;
-    }
-    const parent = path.dirname(cursor);
-    if (parent === cursor) {
-      break;
-    }
-    cursor = parent;
-  }
-  return false;
+function isOfficialInstalledCodexPluginPackageRoot(packageRoot: string) {
+  const segments = path.resolve(packageRoot).split(path.sep).filter(Boolean);
+  const last = segments.at(-1);
+  const scope = segments.at(-2);
+  const nodeModules = segments.at(-3);
+  return last === "codex" && scope === "@openclaw" && nodeModules === "node_modules";
 }
 
 function isModulePathInsideNodeModulesPackage(params: { modulePath: string; packageName: string }) {
@@ -510,17 +498,33 @@ function isModulePathInsideNodeModulesPackage(params: { modulePath: string; pack
   return packageSegments.every((segment, index) => pathSegments[packageStart + index] === segment);
 }
 
-function isCodexPluginModulePath(params: { packageRoot: string; modulePath: string }) {
+function isOfficialInstalledCodexPluginModulePath(params: { modulePath: string }) {
+  let cursor = path.dirname(path.resolve(params.modulePath));
+  for (let depth = 0; depth < 12; depth += 1) {
+    const packageJson = tryReadJsonSync<{ name?: unknown }>(path.join(cursor, "package.json"));
+    if (packageJson) {
+      return (
+        packageJson.name === OFFICIAL_CODEX_PLUGIN_PACKAGE_NAME &&
+        isOfficialInstalledCodexPluginPackageRoot(cursor)
+      );
+    }
+    const parent = path.dirname(cursor);
+    if (parent === cursor) {
+      break;
+    }
+    cursor = parent;
+  }
+  return false;
+}
+
+function isTrustedCodexPluginModulePath(params: { packageRoot: string; modulePath: string }) {
   return (
     isBundledCodexPluginModulePath(params) ||
     isModulePathInsideNodeModulesPackage({
       modulePath: params.modulePath,
-      packageName: "@openclaw/codex",
+      packageName: OFFICIAL_CODEX_PLUGIN_PACKAGE_NAME,
     }) ||
-    isModulePathInsidePackageNamed({
-      modulePath: params.modulePath,
-      packageName: "@openclaw/codex",
-    })
+    isOfficialInstalledCodexPluginModulePath({ modulePath: params.modulePath })
   );
 }
 
@@ -532,7 +536,7 @@ function shouldIncludePrivateLocalOnlyPluginSdkSubpath(params: {
   return (
     shouldIncludePrivateLocalOnlyPluginSdkSubpaths() ||
     (params.subpath === CODEX_NATIVE_TASK_RUNTIME_PLUGIN_SDK_SUBPATH &&
-      isCodexPluginModulePath({
+      isTrustedCodexPluginModulePath({
         packageRoot: params.packageRoot,
         modulePath: params.modulePath,
       }))
@@ -592,7 +596,7 @@ export function listPluginSdkExportedSubpaths(
   if (!packageRoot) {
     return [];
   }
-  const includeCodexPrivateRuntime = isCodexPluginModulePath({ packageRoot, modulePath });
+  const includeCodexPrivateRuntime = isTrustedCodexPluginModulePath({ packageRoot, modulePath });
   const cacheKey = `${packageRoot}::privateQa=${shouldIncludePrivateLocalOnlyPluginSdkSubpaths() ? "1" : "0"}::codexPrivate=${includeCodexPrivateRuntime ? "1" : "0"}`;
   const cached = cachedPluginSdkExportedSubpaths.get(cacheKey);
   if (cached) {
@@ -630,7 +634,7 @@ export function resolvePluginSdkScopedAliasMap(
     isProduction: process.env.NODE_ENV === "production",
     pluginSdkResolution: params.pluginSdkResolution,
   });
-  const includeCodexPrivateRuntime = isCodexPluginModulePath({ packageRoot, modulePath });
+  const includeCodexPrivateRuntime = isTrustedCodexPluginModulePath({ packageRoot, modulePath });
   const cacheKey = `${packageRoot}::${orderedKinds.join(",")}::privateQa=${shouldIncludePrivateLocalOnlyPluginSdkSubpaths() ? "1" : "0"}::codexPrivate=${includeCodexPrivateRuntime ? "1" : "0"}`;
   const cached = cachedPluginSdkScopedAliasMaps.get(cacheKey);
   if (cached) {
