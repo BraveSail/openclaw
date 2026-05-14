@@ -742,6 +742,11 @@ export const registerTelegramHandlers = ({
       if (!primaryEntry) {
         return;
       }
+      const lastEntry = entry.messages.at(-1) ?? primaryEntry;
+      const combinedText = entry.messages
+        .map((item) => item.msg.text ?? item.msg.caption ?? "")
+        .filter(Boolean)
+        .join("\n");
 
       if (
         await shouldSkipMediaDownloadForUnaddressedMentionGroup({
@@ -789,9 +794,19 @@ export const registerTelegramHandlers = ({
         }
       }
 
+      const effectiveMsg = combinedText.trim()
+        ? buildSyntheticTextMessage({
+            base: primaryEntry.msg,
+            text: combinedText,
+            date: lastEntry.msg.date ?? primaryEntry.msg.date,
+          })
+        : primaryEntry.msg;
+      const effectiveCtx = combinedText.trim()
+        ? buildSyntheticContext(primaryEntry.ctx, effectiveMsg)
+        : primaryEntry.ctx;
       await processMessageWithReplyChain(
-        primaryEntry.ctx,
-        primaryEntry.msg,
+        effectiveCtx,
+        effectiveMsg,
         allMedia,
         entry.storeAllowFrom,
         promptContextBoundaryOptions(entry.promptContextMinTimestampMs),
