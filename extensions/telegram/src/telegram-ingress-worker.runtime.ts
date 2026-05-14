@@ -141,7 +141,11 @@ async function main(): Promise<void> {
               updateId,
             });
           }
-          post({ type: "spooled", updateId, queued: result.length });
+          const updateKeys =
+            update && typeof update === "object"
+              ? Object.keys(update as Record<string, unknown>).filter((key) => key !== "update_id")
+              : [];
+          post({ type: "spooled", updateId, queued: result.length, updateKeys });
         }
         failures = 0;
         post({

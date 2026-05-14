@@ -107,6 +107,48 @@ describe("buildTelegramMessageContext reactions", () => {
     expect(setMessageReaction).not.toHaveBeenCalled();
   });
 
+  it("disables ack and status reactions for Guest Mode messages", async () => {
+    const setMessageReaction = vi.fn(async () => undefined);
+    const { createStatusReactionController } = createStatusReactionControllerStub();
+
+    const ctx = await buildTelegramMessageContextForTest({
+      message: {
+        message_id: 34,
+        chat: { id: -1001234567890, type: "supergroup", title: "Ops" },
+        date: 1_700_000_000,
+        text: "@bot ping",
+        guest_query_id: "guest-query-1",
+        from: { id: 42, first_name: "Alice" },
+      },
+      cfg: {
+        agents: {
+          defaults: { model: "anthropic/claude-opus-4-5", workspace: "/tmp/openclaw" },
+        },
+        channels: { telegram: { groupPolicy: "open", allowFrom: ["*"] } },
+        messages: {
+          ackReaction: "👀",
+          groupChat: { mentionPatterns: [] },
+          statusReactions: { enabled: true },
+        },
+      },
+      ackReactionScope: "group-mentions",
+      botApi: { setMessageReaction },
+      runtime: { createStatusReactionController },
+      resolveGroupActivation: () => true,
+      resolveGroupRequireMention: () => false,
+      resolveTelegramGroupConfig: () => ({
+        groupConfig: { requireMention: false },
+        topicConfig: undefined,
+      }),
+    });
+
+    expect(ctx?.guestQueryId).toBe("guest-query-1");
+    expect(ctx?.ackReactionPromise).toBeNull();
+    expect(ctx?.statusReactionController).toBeNull();
+    expect(createStatusReactionController).not.toHaveBeenCalled();
+    expect(setMessageReaction).not.toHaveBeenCalled();
+  });
+
   it("keeps Telegram status reaction variants available for configured emoji fallbacks", async () => {
     const setMessageReaction = vi.fn(async () => undefined);
     const { controller, createStatusReactionController } = createStatusReactionControllerStub();

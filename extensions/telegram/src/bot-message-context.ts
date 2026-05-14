@@ -518,7 +518,7 @@ export const buildTelegramMessageContext = async ({
     : new Map<string, string[]>();
   let allowedStatusReactionEmojisPromise: Promise<Set<TelegramReactionEmoji> | null> | null = null;
   const createStatusReactionController =
-    statusReactionsEnabled && resolvedStatusReactionEmojis && msg.message_id
+    !isGuestMessage && statusReactionsEnabled && resolvedStatusReactionEmojis && msg.message_id
       ? (runtime?.createStatusReactionController ??
         (await loadTelegramMessageContextRuntime()).createStatusReactionController)
       : null;
@@ -565,26 +565,28 @@ export const buildTelegramMessageContext = async ({
         })
       : null;
 
-  const ackReactionPromise: Promise<boolean> | null = statusReactionController
-    ? shouldSendAckReaction
-      ? Promise.resolve(statusReactionController.setQueued()).then(
-          () => true,
-          () => false,
-        )
-      : null
-    : shouldSendAckReaction && msg.message_id && reactionApi && ackReactionEmoji
-      ? withTelegramApiErrorLogging({
-          operation: "setMessageReaction",
-          fn: () =>
-            reactionApi(chatId, msg.message_id, [{ type: "emoji", emoji: ackReactionEmoji }]),
-        }).then(
-          () => true,
-          (err) => {
-            logVerbose(`telegram react failed for chat ${chatId}: ${String(err)}`);
-            return false;
-          },
-        )
-      : null;
+  const ackReactionPromise: Promise<boolean> | null = isGuestMessage
+    ? null
+    : statusReactionController
+      ? shouldSendAckReaction
+        ? Promise.resolve(statusReactionController.setQueued()).then(
+            () => true,
+            () => false,
+          )
+        : null
+      : shouldSendAckReaction && msg.message_id && reactionApi && ackReactionEmoji
+        ? withTelegramApiErrorLogging({
+            operation: "setMessageReaction",
+            fn: () =>
+              reactionApi(chatId, msg.message_id, [{ type: "emoji", emoji: ackReactionEmoji }]),
+          }).then(
+            () => true,
+            (err) => {
+              logVerbose(`telegram react failed for chat ${chatId}: ${String(err)}`);
+              return false;
+            },
+          )
+        : null;
 
   const { ctxPayload, skillFilter, turn } = await buildTelegramInboundContextPayload({
     cfg,

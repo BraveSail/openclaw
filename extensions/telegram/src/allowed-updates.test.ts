@@ -17,6 +17,9 @@ describe("resolveTelegramAllowedUpdates", () => {
     if (!expectedUpdates.includes("channel_post")) {
       expectedUpdates.push("channel_post");
     }
+    if (!expectedUpdates.includes("guest_message")) {
+      expectedUpdates.push("guest_message");
+    }
 
     expect(updates).toEqual(expectedUpdates);
     expect(updates).toContain("message_reaction");

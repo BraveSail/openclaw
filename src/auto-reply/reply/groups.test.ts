@@ -51,6 +51,16 @@ describe("group runtime loading", () => {
     expect(toolOnlyContext).toContain("<https://example.com>");
     expect(toolOnlyContext).toContain("do not call message(action=send)");
     expect(toolOnlyContext).not.toContain('reply with exactly "NO_REPLY"');
+    const guestContext = isolatedGroups.buildGroupChatContext({
+      sessionCtx: { ChatType: "group", Provider: "telegram", GuestQueryId: "guest-query-1" },
+      sourceReplyDeliveryMode: "automatic",
+      silentReplyPolicy: "allow",
+      silentToken: "NO_REPLY",
+    });
+    expect(guestContext).toContain("Telegram Guest Mode");
+    expect(guestContext).toContain("use only your normal final text answer");
+    expect(guestContext).toContain("Do not use message tools, stickers, reactions");
+    expect(guestContext).not.toContain("Emoji reactions are welcome");
     expect(
       isolatedGroups.buildGroupIntro({
         cfg: {} as OpenClawConfig,

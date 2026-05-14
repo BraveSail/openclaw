@@ -22,6 +22,8 @@ export type TelegramIngressWorkerMessage =
       type: "spooled";
       updateId: number;
       queued: number;
+      /** Top-level Update keys (excluding update_id), for ingress diagnostics. */
+      updateKeys?: string[];
     };
 
 export type TelegramIngressWorkerOptions = {

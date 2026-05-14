@@ -96,6 +96,22 @@ describe("resolveSourceReplyDeliveryMode", () => {
     ).toBe("automatic");
   });
 
+  it("forces automatic delivery for Telegram Guest Mode queries", () => {
+    expect(
+      resolveSourceReplyDeliveryMode({
+        cfg: emptyConfig,
+        ctx: { ChatType: "group", GuestQueryId: "guest-query-1" },
+      }),
+    ).toBe("automatic");
+    expect(
+      resolveSourceReplyDeliveryMode({
+        cfg: emptyConfig,
+        ctx: { ChatType: "group", GuestQueryId: "guest-query-1" },
+        requested: "message_tool_only",
+      }),
+    ).toBe("automatic");
+  });
+
   it("treats native and authorized text commands as explicit replies in groups", () => {
     expect(
       resolveSourceReplyDeliveryMode({

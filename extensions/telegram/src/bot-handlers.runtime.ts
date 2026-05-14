@@ -109,6 +109,7 @@ import {
   evaluateTelegramGroupPolicyAccess,
 } from "./group-access.js";
 import { migrateTelegramGroupConfig } from "./group-migration.js";
+import { evaluateTelegramGuestMessageAuthorization } from "./guest-access.js";
 import {
   resolveTelegramCommandIngressAuthorization,
   resolveTelegramEventIngressAuthorization,
@@ -2468,6 +2469,39 @@ export const registerTelegramHandlers = ({
     sendOversizeWarning: boolean;
     oversizeLogMessage: string;
     errorMessage: string;
+    // Bot API 10.0 Guest Mode: when true, the bot received an Update.guest_message
+    // from a chat where it is not a member. Group-membership allowlist gates do
+    // not apply (the whole point of Guest Mode is that the bot is not a member);
+    // sender-level account allowFrom still applies.
+    isGuestMessage?: boolean;
+  };
+
+  const shouldSkipGuestMessage = (params: {
+    chatId: string | number;
+    chatTitle?: string;
+    senderId: string;
+    senderUsername: string;
+  }): boolean => {
+    const decision = evaluateTelegramGuestMessageAuthorization({
+      allowFrom,
+      senderId: params.senderId,
+      senderUsername: params.senderUsername,
+    });
+    if (decision.allowed) {
+      return false;
+    }
+    const reasonLabel =
+      decision.reason === "allowfrom-empty" ? "guest-allowfrom-empty" : "guest-sender-not-allowed";
+    logger.info(
+      {
+        chatId: params.chatId,
+        title: params.chatTitle,
+        reason: reasonLabel,
+        senderId: params.senderId || undefined,
+      },
+      "skipping guest message",
+    );
+    return true;
   };
 
   const normalizeChannelPostMessage = (post: Message): Message => {
@@ -2561,7 +2595,18 @@ export const registerTelegramHandlers = ({
         return;
       }
 
-      if (
+      if (event.isGuestMessage) {
+        if (
+          shouldSkipGuestMessage({
+            chatId: event.chatId,
+            chatTitle: event.msg.chat.title,
+            senderId: event.senderId,
+            senderUsername: event.senderUsername,
+          })
+        ) {
+          return;
+        }
+      } else if (
         shouldSkipGroupMessage({
           isGroup: event.isGroup,
           chatId: event.chatId,
@@ -2635,6 +2680,31 @@ export const registerTelegramHandlers = ({
     const msg = ctx.message;
     if (!msg) {
       return;
+    }
+    // Bot API 10.0 Guest Mode diagnostic: if the raw Update carries
+    // guest_message keys but grammY classified it as `message`, log the raw
+    // top-level key set once so we can confirm where the classification was
+    // made. This is bounded to group/supergroup chats to avoid DM noise.
+    if (
+      ctx.update &&
+      typeof ctx.update === "object" &&
+      (msg.chat.type === "group" || msg.chat.type === "supergroup")
+    ) {
+      const rawKeys = Object.keys(ctx.update as Record<string, unknown>).filter(
+        (key) => key !== "update_id",
+      );
+      const rawMsg = (ctx.update as { message?: { guest_query_id?: string } }).message;
+      if (rawKeys.includes("guest_message") || rawMsg?.guest_query_id) {
+        logger.info(
+          {
+            chatId: msg.chat.id,
+            chatType: msg.chat.type,
+            updateKeys: rawKeys,
+            messageHasGuestQueryId: Boolean(rawMsg?.guest_query_id),
+          },
+          "inbound update has guest envelope",
+        );
+      }
     }
     const isGroup = msg.chat.type === "group" || msg.chat.type === "supergroup";
     const isForum = await resolveTelegramForumFlag({
@@ -2712,6 +2782,7 @@ export const registerTelegramHandlers = ({
       sendOversizeWarning: false,
       oversizeLogMessage: "guest message media exceeds size limit",
       errorMessage: "guest_message handler failed",
+      isGuestMessage: true,
     });
   });
 

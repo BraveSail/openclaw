@@ -328,6 +328,17 @@ export class TelegramPollingSession {
         pollState.outcome = "error";
         pollState.error = message.message;
       }
+      if (message.type === "spooled" && message.updateKeys && message.updateKeys.length > 0) {
+        const keys = message.updateKeys;
+        // Bot API 10.0 Guest Mode diagnostic: when an Update carries
+        // `guest_message` we surface its shape once at INFO so we can confirm
+        // the wire delivery, even if downstream handlers later reclassify it.
+        if (keys.includes("guest_message")) {
+          this.opts.log(
+            `[telegram][diag] spooled guest_message update ${message.updateId} keys=${keys.join(",")}`,
+          );
+        }
+      }
     });
     const stopOnAbort = () => {
       void worker.stop();

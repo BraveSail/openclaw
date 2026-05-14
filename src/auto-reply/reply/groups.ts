@@ -227,6 +227,10 @@ export function buildGroupChatContext(params: {
 }): string {
   const providerLabel = resolveProviderLabel(params.sessionCtx.Provider);
   const messageToolOnly = params.sourceReplyDeliveryMode === "message_tool_only";
+  const isTelegramGuestMode =
+    normalizeOptionalLowercaseString(params.sessionCtx.Provider) === "telegram" &&
+    typeof params.sessionCtx.GuestQueryId === "string" &&
+    params.sessionCtx.GuestQueryId.length > 0;
 
   const lines: string[] = [];
   lines.push(`You are in a ${providerLabel} group chat.`);
@@ -239,8 +243,15 @@ export function buildGroupChatContext(params: {
       "Your replies are automatically sent to this group chat. Do not use the message tool to send to this same group - just reply normally.",
     );
   }
+  if (isTelegramGuestMode) {
+    lines.push(
+      "Telegram Guest Mode: this is a one-shot guest message from a chat where the bot is not a member. To reply visibly, use only your normal final text answer. Do not use message tools, stickers, reactions, draft previews, or follow-up sends for this source chat.",
+    );
+  }
   lines.push(
-    "Be a good group participant: mostly lurk and follow the conversation; reply only when directly addressed or you can add clear value. Emoji reactions are welcome when available.",
+    isTelegramGuestMode
+      ? "Be a good group participant: mostly lurk and follow the conversation; reply only when directly addressed or you can add clear value."
+      : "Be a good group participant: mostly lurk and follow the conversation; reply only when directly addressed or you can add clear value. Emoji reactions are welcome when available.",
   );
   lines.push(
     "Write like a human. Avoid Markdown tables. Minimize empty lines and use normal chat conventions, not document-style spacing. Don't type literal \\n sequences; use real line breaks sparingly.",

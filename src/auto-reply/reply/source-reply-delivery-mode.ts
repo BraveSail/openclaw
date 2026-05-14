@@ -8,6 +8,8 @@ export type SourceReplyDeliveryModeContext = {
   CommandAuthorized?: boolean;
   CommandBody?: string;
   CommandSource?: "text" | "native";
+  /** Telegram Bot API Guest Mode query id; guest replies must use automatic delivery. */
+  GuestQueryId?: string;
 };
 
 export function isExplicitSourceReplyCommand(ctx: SourceReplyDeliveryModeContext): boolean {
@@ -24,6 +26,9 @@ export function resolveSourceReplyDeliveryMode(params: {
   messageToolAvailable?: boolean;
   defaultVisibleReplies?: "automatic" | "message_tool";
 }): SourceReplyDeliveryMode {
+  if (typeof params.ctx.GuestQueryId === "string" && params.ctx.GuestQueryId.length > 0) {
+    return "automatic";
+  }
   if (params.requested) {
     return params.messageToolAvailable === false && params.requested === "message_tool_only"
       ? "automatic"
