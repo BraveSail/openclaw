@@ -7,13 +7,14 @@ import {
 
 type TelegramMediaMessage = Pick<
   Message,
-  "photo" | "video" | "video_note" | "audio" | "voice" | "document" | "sticker"
+  "photo" | "video" | "video_note" | "animation" | "audio" | "voice" | "document" | "sticker"
 >;
 
 type TelegramMediaFileRef =
   | NonNullable<Message["photo"]>[number]
   | NonNullable<Message["video"]>
   | NonNullable<Message["video_note"]>
+  | NonNullable<Message["animation"]>
   | NonNullable<Message["audio"]>
   | NonNullable<Message["voice"]>
   | NonNullable<Message["document"]>
@@ -46,6 +47,9 @@ export function resolveTelegramPrimaryMedia(
   }
   if (msg.video_note) {
     return { placeholder: "<media:video>", fileRef: msg.video_note };
+  }
+  if (msg.animation) {
+    return { placeholder: "<media:video>", fileRef: msg.animation };
   }
   if (msg.audio) {
     return { placeholder: "<media:audio>", fileRef: msg.audio };

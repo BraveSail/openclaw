@@ -408,6 +408,130 @@ export async function buildTelegramInboundContextPayload(params: {
       : undefined;
   const currentMediaForContext = stickerCacheHit ? [] : allMedia;
   const contextMedia = [...currentMediaForContext, ...replyMedia];
+  const mediaMetadataItems = allMedia
+    .map((m) => m.mediaMetadata)
+    .filter((m): m is NonNullable<(typeof allMedia)[number]["mediaMetadata"]> => Boolean(m));
+  const fallbackCurrentMediaMetadata = (() => {
+    if (msg.sticker) {
+      return {
+        kind: "sticker" as const,
+        fileId: msg.sticker.file_id,
+        fileUniqueId: msg.sticker.file_unique_id,
+        width: msg.sticker.width,
+        height: msg.sticker.height,
+        emoji: msg.sticker.emoji ?? undefined,
+        setName: msg.sticker.set_name ?? undefined,
+        isAnimated: msg.sticker.is_animated === true,
+        isVideo: msg.sticker.is_video === true,
+      };
+    }
+    const photo = msg.photo?.[msg.photo.length - 1];
+    if (photo) {
+      return {
+        kind: "image" as const,
+        fileId: photo.file_id,
+        fileUniqueId: photo.file_unique_id,
+        width: photo.width,
+        height: photo.height,
+      };
+    }
+    if (msg.video) {
+      return {
+        kind: "video" as const,
+        fileId: msg.video.file_id,
+        fileUniqueId: msg.video.file_unique_id,
+        fileName: msg.video.file_name ?? undefined,
+        mimeType: msg.video.mime_type ?? undefined,
+        width: msg.video.width,
+        height: msg.video.height,
+        duration: msg.video.duration,
+      };
+    }
+    if (msg.video_note) {
+      return {
+        kind: "video" as const,
+        fileId: msg.video_note.file_id,
+        fileUniqueId: msg.video_note.file_unique_id,
+        width: msg.video_note.length,
+        height: msg.video_note.length,
+        duration: msg.video_note.duration,
+      };
+    }
+    if (msg.animation) {
+      return {
+        kind: "video" as const,
+        fileId: msg.animation.file_id,
+        fileUniqueId: msg.animation.file_unique_id,
+        fileName: msg.animation.file_name ?? undefined,
+        mimeType: msg.animation.mime_type ?? undefined,
+        width: msg.animation.width,
+        height: msg.animation.height,
+        duration: msg.animation.duration,
+      };
+    }
+    if (msg.document) {
+      return {
+        kind: "document" as const,
+        fileId: msg.document.file_id,
+        fileUniqueId: msg.document.file_unique_id,
+        fileName: msg.document.file_name ?? undefined,
+        mimeType: msg.document.mime_type ?? undefined,
+      };
+    }
+    if (msg.audio) {
+      return {
+        kind: "audio" as const,
+        fileId: msg.audio.file_id,
+        fileUniqueId: msg.audio.file_unique_id,
+        fileName: msg.audio.file_name ?? undefined,
+        mimeType: msg.audio.mime_type ?? undefined,
+        duration: msg.audio.duration,
+      };
+    }
+    if (msg.voice) {
+      return {
+        kind: "audio" as const,
+        fileId: msg.voice.file_id,
+        fileUniqueId: msg.voice.file_unique_id,
+        mimeType: msg.voice.mime_type ?? undefined,
+        duration: msg.voice.duration,
+      };
+    }
+    return undefined;
+  })();
+  const primaryCurrentMediaMetadata = mediaMetadataItems[0] ?? fallbackCurrentMediaMetadata;
+  const mediaFileIds = mediaMetadataItems.map((m) => m.fileId).filter(Boolean);
+  const mediaFileUniqueIds = mediaMetadataItems.map((m) => m.fileUniqueId).filter(Boolean);
+  const formatMediaMetadata = (label: string, value?: Record<string, unknown>) => {
+    if (!value) return undefined;
+    const normalized = Object.fromEntries(
+      Object.entries(value).filter(
+        ([, entry]) => entry !== undefined && entry !== null && entry !== "",
+      ),
+    );
+    return Object.keys(normalized).length > 0
+      ? `${label}: ${JSON.stringify(normalized)}`
+      : undefined;
+  };
+  const mediaMetadataPromptContext: TelegramPromptContextEntry[] = (
+    [
+      {
+        label: "Current media metadata",
+        payload: primaryCurrentMediaMetadata,
+      },
+      {
+        label: "Reply target media metadata",
+        payload: replyTarget?.mediaMetadata,
+      },
+    ] as TelegramPromptContextEntry[]
+  ).filter((entry) => {
+    const formatted = formatMediaMetadata(
+      entry.label,
+      entry.payload as Record<string, unknown> | undefined,
+    );
+    return Boolean(formatted);
+  });
+  const combinedUntrustedContext = [...promptContext, ...mediaMetadataPromptContext];
   const replyHead = visibleReplyChain[0];
   const telegramFrom = isGroup
     ? buildTelegramGroupFrom(chatId, resolvedThreadId)
@@ -493,7 +617,7 @@ export async function buildTelegramInboundContextPayload(params: {
           }
         : undefined,
       groupSystemPrompt: isGroup || (!isGroup && groupConfig) ? groupSystemPrompt : undefined,
-      untrustedContext: promptContext.length > 0 ? promptContext : undefined,
+      untrustedContext: combinedUntrustedContext.length > 0 ? combinedUntrustedContext : undefined,
     },
     contextVisibility: contextVisibilityMode,
     extra: {
@@ -522,6 +646,13 @@ export async function buildTelegramInboundContextPayload(params: {
       WasMentioned: isGroup ? effectiveWasMentioned : undefined,
       Sticker: allMedia[0]?.stickerMetadata,
       StickerMediaIncluded: allMedia[0]?.stickerMetadata ? !stickerCacheHit : undefined,
+      MediaFileId: mediaFileIds[0],
+      MediaFileIds: mediaFileIds.length > 0 ? mediaFileIds : undefined,
+      MediaFileUniqueId: mediaFileUniqueIds[0],
+      MediaFileUniqueIds: mediaFileUniqueIds.length > 0 ? mediaFileUniqueIds : undefined,
+      MediaMetadata: primaryCurrentMediaMetadata,
+      MediaMetadataItems: mediaMetadataItems.length > 0 ? mediaMetadataItems : undefined,
+      ReplyToMediaMetadata: replyTarget?.mediaMetadata,
       ...locationContext,
       CommandSource: options?.commandSource,
       IsForum: isForum,

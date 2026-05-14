@@ -292,7 +292,14 @@ export async function resolveTelegramInboundBody(params: {
   }
 
   const savedMediaPlaceholder = formatSavedMediaPlaceholder(allMedia);
-  if (!hasAudio && savedMediaPlaceholder && placeholder && bodyText === placeholder) {
+  const structuralPlaceholderIsAuthoritative = Boolean(msg.sticker) || Boolean(msg.animation);
+  if (
+    !hasAudio &&
+    !structuralPlaceholderIsAuthoritative &&
+    savedMediaPlaceholder &&
+    placeholder &&
+    bodyText === placeholder
+  ) {
     bodyText = savedMediaPlaceholder;
   }
   if (!bodyText && allMedia.length > 0) {
@@ -300,6 +307,11 @@ export async function resolveTelegramInboundBody(params: {
       bodyText = preflightTranscript
         ? formatAudioTranscriptForAgent(preflightTranscript)
         : "<media:audio>";
+    } else if (placeholder) {
+      bodyText =
+        placeholder === "<media:image>"
+          ? `<media:image>${allMedia.length > 1 ? ` (${allMedia.length} images)` : ""}`
+          : placeholder;
     } else {
       bodyText = savedMediaPlaceholder ?? "<media:document>";
     }

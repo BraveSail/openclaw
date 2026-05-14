@@ -35,3 +35,18 @@ export interface StickerMetadata {
   /** Cached description from previous vision processing (skip re-processing if present). */
   cachedDescription?: string;
 }
+
+export interface TelegramInboundMediaMetadata {
+  kind: "image" | "video" | "audio" | "document" | "sticker";
+  fileId?: string;
+  fileUniqueId?: string;
+  fileName?: string;
+  mimeType?: string;
+  width?: number;
+  height?: number;
+  duration?: number;
+  emoji?: string;
+  setName?: string;
+  isAnimated?: boolean;
+  isVideo?: boolean;
+}
