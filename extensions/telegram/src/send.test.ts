@@ -2150,6 +2150,91 @@ describe("sendMessageTelegram", () => {
     expect(sendMessage.mock.calls.map((call) => String(call[1] ?? "")).join("")).toBe(plainText);
     expect(res.messageId).toBe("96");
   });
+
+  it("does not auto-fold short Telegram sends in groups", async () => {
+    const sendMessage = vi.fn().mockResolvedValue({ message_id: 1, chat: { id: -1001234567890 } });
+    const api = { sendMessage } as unknown as { sendMessage: typeof sendMessage };
+
+    await sendMessageTelegram("telegram:group:-1001234567890", "short hello", {
+      cfg: TELEGRAM_TEST_CFG,
+      token: "tok",
+      api,
+    });
+
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    const [, sentText] = requireMockCall(sendMessage.mock.calls[0], "sendMessage call");
+    expect(String(sentText)).not.toMatch(/<blockquote/);
+  });
+
+  it("does not auto-fold long Telegram sends in direct chats", async () => {
+    const longText = "a".repeat(150);
+    const sendMessage = vi.fn().mockResolvedValue({ message_id: 2, chat: { id: "123" } });
+    const api = { sendMessage } as unknown as { sendMessage: typeof sendMessage };
+
+    await sendMessageTelegram("123", longText, {
+      cfg: TELEGRAM_TEST_CFG,
+      token: "tok",
+      api,
+    });
+
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    const [, sentText] = requireMockCall(sendMessage.mock.calls[0], "sendMessage call");
+    expect(String(sentText)).not.toMatch(/<blockquote/);
+  });
+
+  it("auto-folds long Telegram sends into expandable blockquotes in groups", async () => {
+    const longText = "a".repeat(150);
+    const sendMessage = vi.fn().mockResolvedValue({ message_id: 3, chat: { id: -1001234567890 } });
+    const api = { sendMessage } as unknown as { sendMessage: typeof sendMessage };
+
+    await sendMessageTelegram("telegram:group:-1001234567890", longText, {
+      cfg: TELEGRAM_TEST_CFG,
+      token: "tok",
+      api,
+    });
+
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    const [, sentText, params] = requireMockCall(sendMessage.mock.calls[0], "sendMessage call");
+    expect(String(sentText)).toMatch(/^<blockquote expandable>[\s\S]*<\/blockquote>$/);
+    expect(String(sentText)).toContain(longText);
+    expect(requireRecord(params, "send params").parse_mode).toBe("HTML");
+  });
+
+  it("does not double-wrap long group sends already containing a blockquote", async () => {
+    const longText = `<blockquote>${"a".repeat(150)}</blockquote>`;
+    const sendMessage = vi.fn().mockResolvedValue({ message_id: 4, chat: { id: -1001234567890 } });
+    const api = { sendMessage } as unknown as { sendMessage: typeof sendMessage };
+
+    await sendMessageTelegram("telegram:group:-1001234567890", longText, {
+      cfg: TELEGRAM_TEST_CFG,
+      token: "tok",
+      api,
+      textMode: "html",
+    });
+
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    const [, sentText] = requireMockCall(sendMessage.mock.calls[0], "sendMessage call");
+    expect(String(sentText)).not.toMatch(/^<blockquote expandable>/);
+    expect(String(sentText)).toMatch(/^<blockquote>/);
+  });
+
+  it("auto-folds long markdown-mode group sends and preserves formatting", async () => {
+    const longMarkdown = `**bold** ${"a".repeat(150)}`;
+    const sendMessage = vi.fn().mockResolvedValue({ message_id: 5, chat: { id: -1001234567890 } });
+    const api = { sendMessage } as unknown as { sendMessage: typeof sendMessage };
+
+    await sendMessageTelegram("telegram:group:-1001234567890", longMarkdown, {
+      cfg: TELEGRAM_TEST_CFG,
+      token: "tok",
+      api,
+    });
+
+    const [, sentText, params] = requireMockCall(sendMessage.mock.calls[0], "sendMessage call");
+    expect(String(sentText)).toMatch(/^<blockquote expandable>/);
+    expect(String(sentText)).toMatch(/<\/blockquote>$/);
+    expect(String(sentText)).toContain("<b>bold</b>");
+    expect(requireRecord(params, "send params").parse_mode).toBe("HTML");
+  });
 });
 
 describe("reactMessageTelegram", () => {
@@ -2727,6 +2812,67 @@ describe("editMessageTelegram", () => {
     const params = requireRecord((botApi.editMessageText.mock.calls[0] ?? [])[3], "edit params");
     expect(params.parse_mode).toBe("HTML");
     expect(params.link_preview_options).toEqual({ is_disabled: true });
+  });
+
+  it("does not auto-fold long Telegram edits in direct chats", async () => {
+    const longText = "a".repeat(150);
+    botApi.editMessageText.mockResolvedValue({ message_id: 1, chat: { id: "123" } });
+
+    await editMessageTelegram("123", 1, longText, {
+      token: "tok",
+      cfg: {},
+    });
+
+    expect(botApi.editMessageText).toHaveBeenCalledTimes(1);
+    const [, , sentText] = requireMockCall(
+      botApi.editMessageText.mock.calls[0] as unknown[],
+      "edit call",
+    );
+    expect(String(sentText)).not.toMatch(/<blockquote/);
+  });
+
+  it("auto-folds long Telegram edits into expandable blockquotes in groups", async () => {
+    const longText = "a".repeat(150);
+    botApi.editMessageText.mockResolvedValue({
+      message_id: 1,
+      chat: { id: "-1001234567890" },
+    });
+
+    await editMessageTelegram("telegram:group:-1001234567890", 1, longText, {
+      token: "tok",
+      cfg: {},
+    });
+
+    expect(botApi.editMessageText).toHaveBeenCalledTimes(1);
+    const [, , sentText, params] = requireMockCall(
+      botApi.editMessageText.mock.calls[0] as unknown[],
+      "edit call",
+    );
+    expect(String(sentText)).toMatch(/^<blockquote expandable>[\s\S]*<\/blockquote>$/);
+    expect(String(sentText)).toContain(longText);
+    expect(requireRecord(params, "edit params").parse_mode).toBe("HTML");
+  });
+
+  it("does not double-wrap long group edits already containing a blockquote", async () => {
+    const longText = `<blockquote>${"a".repeat(150)}</blockquote>`;
+    botApi.editMessageText.mockResolvedValue({
+      message_id: 1,
+      chat: { id: "-1001234567890" },
+    });
+
+    await editMessageTelegram("telegram:group:-1001234567890", 1, longText, {
+      token: "tok",
+      cfg: {},
+      textMode: "html",
+    });
+
+    expect(botApi.editMessageText).toHaveBeenCalledTimes(1);
+    const [, , sentText] = requireMockCall(
+      botApi.editMessageText.mock.calls[0] as unknown[],
+      "edit call",
+    );
+    expect(String(sentText)).not.toMatch(/^<blockquote expandable>/);
+    expect(String(sentText)).toMatch(/^<blockquote>/);
   });
 });
 

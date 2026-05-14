@@ -183,6 +183,7 @@ const MESSAGE_NOT_MODIFIED_RE =
 const MESSAGE_DELETE_NOOP_RE =
   /message to delete not found|message can't be deleted|MESSAGE_ID_INVALID|MESSAGE_DELETE_FORBIDDEN/i;
 const CHAT_NOT_FOUND_RE = /400: Bad Request: chat not found/i;
+const TELEGRAM_AUTO_EXPANDABLE_THRESHOLD = 100;
 const sendLogger = createSubsystemLogger("telegram/send");
 const diagLogger = createSubsystemLogger("telegram/diagnostic");
 const telegramClientOptionsCache = new Map<string, ApiClientOptions | undefined>();
@@ -647,6 +648,11 @@ export async function sendMessageTelegram(
     accountId: account.accountId,
   });
   const renderHtmlText = (value: string) => renderTelegramHtmlText(value, { textMode, tableMode });
+  const autoFoldEnabled = shouldAutoFoldTelegramText({
+    text,
+    textMode,
+    chatType: target.chatType,
+  });
 
   // Resolve link preview setting from config (default: enabled).
   const linkPreviewEnabled = account.config.linkPreview ?? true;
@@ -735,7 +741,11 @@ export async function sendMessageTelegram(
   };
 
   const buildChunkedTextPlan = (rawText: string, context: string): TelegramTextChunk[] => {
-    const htmlText = renderHtmlText(rawText);
+    const wrapAutoFold = autoFoldEnabled && rawText === text;
+    const renderedHtml = renderHtmlText(rawText);
+    const htmlText = wrapAutoFold
+      ? `<blockquote expandable>${renderedHtml}</blockquote>`
+      : renderedHtml;
     const fallbackText = opts.plainText ?? rawText;
     let htmlChunks: string[];
     try {
@@ -1349,6 +1359,7 @@ export async function editMessageTelegram(
     cfg: opts.cfg,
   });
   const rawTarget = String(chatIdInput);
+  const editTarget = parseTelegramTarget(rawTarget);
   const chatId = await resolveAndPersistChatId({
     cfg,
     api,
@@ -1378,7 +1389,15 @@ export async function editMessageTelegram(
     channel: "telegram",
     accountId: account.accountId,
   });
-  const htmlText = renderTelegramHtmlText(text, { textMode, tableMode });
+  const renderedEditHtml = renderTelegramHtmlText(text, { textMode, tableMode });
+  const editAutoFold = shouldAutoFoldTelegramText({
+    text,
+    textMode,
+    chatType: editTarget.chatType,
+  });
+  const htmlText = editAutoFold
+    ? `<blockquote expandable>${renderedEditHtml}</blockquote>`
+    : renderedEditHtml;
 
   // Reply markup semantics:
   // - buttons === undefined → don't send reply_markup (keep existing)
@@ -1435,6 +1454,23 @@ export async function editMessageTelegram(
 
   logVerbose(`[telegram] Edited message ${messageId} in chat ${chatId}`);
   return { ok: true, messageId: String(messageId), chatId };
+}
+
+function shouldAutoFoldTelegramText(params: {
+  text: string;
+  textMode: "markdown" | "html";
+  chatType?: "direct" | "group" | "unknown";
+}): boolean {
+  if (params.chatType === "direct") {
+    return false;
+  }
+  if (params.text.length <= TELEGRAM_AUTO_EXPANDABLE_THRESHOLD) {
+    return false;
+  }
+  if (params.textMode === "html" && /<blockquote(?:\s+expandable)?\b/i.test(params.text)) {
+    return false;
+  }
+  return true;
 }
 
 function inferFilename(kind: MediaKind) {
