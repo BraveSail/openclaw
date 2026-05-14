@@ -15,6 +15,7 @@ import {
   formatErrorMessage,
   isActiveHarnessContextEngine,
   isSubagentSessionKey,
+  loadCodexBundleMcpThreadConfig,
   normalizeAgentRuntimeTools,
   resolveAttemptSpawnWorkspaceDir,
   resolveAgentHarnessBeforePromptBuildResult,
@@ -87,6 +88,7 @@ import { buildCodexPluginAppCacheKey } from "./plugin-app-cache-key.js";
 import {
   buildCodexPluginThreadConfig,
   buildCodexPluginThreadConfigInputFingerprint,
+  mergeCodexThreadConfigs,
   shouldBuildCodexPluginThreadConfig,
 } from "./plugin-thread-config.js";
 import {
@@ -497,6 +499,16 @@ export async function runCodexAppServerAttempt(
     : resolveCodexAppServerEnvApiKeyCacheKey({
         startOptions: appServer.start,
       });
+  const bundleMcpThreadConfig = await loadCodexBundleMcpThreadConfig({
+    workspaceDir: effectiveWorkspace,
+    cfg: params.config,
+    toolsEnabled: supportsModelTools(params.model),
+    disableTools: params.disableTools,
+    toolsAllow: params.toolsAllow,
+  });
+  for (const diagnostic of bundleMcpThreadConfig.diagnostics) {
+    embeddedAgentLog.warn(`bundle-mcp: ${diagnostic.pluginId}: ${diagnostic.message}`);
+  }
   const activeContextEngine = isActiveHarnessContextEngine(params.contextEngine)
     ? params.contextEngine
     : undefined;
@@ -693,7 +705,10 @@ export async function runCodexAppServerAttempt(
       : options.nativeHookRelay?.enabled === false
         ? buildCodexNativeHookRelayDisabledConfig()
         : undefined;
-    const threadConfig = nativeHookRelayConfig;
+    const threadConfig = mergeCodexThreadConfigs(
+      nativeHookRelayConfig,
+      bundleMcpThreadConfig?.configPatch as JsonObject | undefined,
+    );
     const pluginThreadConfigEnabled = shouldBuildCodexPluginThreadConfig(pluginConfig);
     const pluginAppCacheKey = buildCodexPluginAppCacheKey({
       appServer,
@@ -752,6 +767,8 @@ export async function runCodexAppServerAttempt(
             appServer: pluginAppServer,
             developerInstructions: promptBuild.developerInstructions,
             config: threadConfig,
+            mcpServersFingerprint: bundleMcpThreadConfig.fingerprint,
+            mcpServersFingerprintEvaluated: bundleMcpThreadConfig.evaluated,
             pluginThreadConfig: pluginThreadConfigEnabled
               ? {
                   enabled: true,
@@ -886,6 +903,7 @@ export async function runCodexAppServerAttempt(
   let turnCompletionLastActivityReason = "startup";
   let turnCompletionLastActivityDetails: Record<string, unknown> | undefined;
   let activeAppServerTurnRequests = 0;
+  const activeOpenClawDynamicToolCallIds = new Set<string>();
   const activeTurnItemIds = new Set<string>();
 
   const clearTurnCompletionIdleTimer = () => {
@@ -1231,12 +1249,16 @@ export async function runCodexAppServerAttempt(
       turnCompletionIdleWatchArmed &&
       !turnCompletionIdleWatchPinnedByTerminalError &&
       notification.method !== "turn/completed" &&
-      isCurrentTurnNotification
+      isCurrentTurnNotification &&
+      !isTrackedOpenClawDynamicToolCompletionNotification(
+        notification,
+        activeOpenClawDynamicToolCallIds,
+      )
     ) {
       // The short completion-idle watchdog only guards the blind gap after
-      // OpenClaw hands a turn-scoped request result back to Codex. Once Codex
-      // sends another current-turn notification, the app-server is alive again;
-      // the longer terminal watchdog remains the stuck-turn backstop.
+      // OpenClaw hands a turn-scoped request result back to Codex. Bookkeeping
+      // that closes the just-served OpenClaw dynamic tool item is still part of
+      // that handoff, so keep the short watchdog armed for that notification.
       disarmTurnCompletionIdleWatch();
     }
     // Determine terminal-turn status before invoking the projector so a throw
@@ -1332,6 +1354,7 @@ export async function runCodexAppServerAttempt(
         return undefined;
       }
       armCompletionWatchOnResponse = true;
+      activeOpenClawDynamicToolCallIds.add(call.callId);
       trajectoryRecorder?.recordEvent("tool.call", {
         threadId: call.threadId,
         turnId: call.turnId,
@@ -1879,6 +1902,7 @@ function buildCodexTurnStartFailureResult(params: {
     messagingToolSentTexts: [],
     messagingToolSentMediaUrls: [],
     messagingToolSentTargets: [],
+    messagingToolSourceReplyPayloads: [],
     cloudCodeAssistFormatError: false,
     replayMetadata: {
       hadPotentialSideEffects: false,
@@ -2667,6 +2691,22 @@ function readNotificationItemId(notification: CodexServerNotification): string |
     readString(notification.params, "itemId") ??
     readString(notification.params, "id")
   );
+}
+
+function isTrackedOpenClawDynamicToolCompletionNotification(
+  notification: CodexServerNotification,
+  activeOpenClawDynamicToolCallIds: ReadonlySet<string>,
+): boolean {
+  if (notification.method !== "item/completed" || !isJsonObject(notification.params)) {
+    return false;
+  }
+  const itemId = readNotificationItemId(notification);
+  if (!itemId || !activeOpenClawDynamicToolCallIds.has(itemId)) {
+    return false;
+  }
+  const item = isJsonObject(notification.params.item) ? notification.params.item : undefined;
+  const itemType = item ? readString(item, "type") : undefined;
+  return itemType === undefined || itemType === "dynamicToolCall";
 }
 
 function readRawAssistantTextPreview(item: JsonObject): string | undefined {
