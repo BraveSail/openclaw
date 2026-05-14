@@ -25,6 +25,10 @@ import { makeProxyFetch } from "./proxy.js";
 
 export type { MonitorTelegramOpts } from "./monitor.types.js";
 
+type GrammyRunnerAllowedUpdates = NonNullable<
+  NonNullable<RunOptions<unknown>["runner"]>["fetch"]
+>["allowed_updates"];
+
 export function createTelegramRunnerOptions(cfg: OpenClawConfig): RunOptions<unknown> {
   return {
     sink: {
@@ -34,8 +38,9 @@ export function createTelegramRunnerOptions(cfg: OpenClawConfig): RunOptions<unk
       fetch: {
         // Match grammY defaults
         timeout: 30,
-        // Request reactions without dropping default update types.
-        allowed_updates: resolveTelegramAllowedUpdates(),
+        // Request reactions/guest messages without dropping default update types.
+        // "guest_message" is Bot API 10.0 and may be newer than grammY's type constants.
+        allowed_updates: resolveTelegramAllowedUpdates() as unknown as GrammyRunnerAllowedUpdates,
       },
       // Suppress grammY getUpdates stack traces; we log concise errors ourselves.
       silent: true,

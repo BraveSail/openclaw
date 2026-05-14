@@ -485,7 +485,11 @@ export const dispatchTelegramMessage = async ({
   });
   const forceBlockStreamingForReasoning = resolvedReasoningLevel === "on";
   const streamReasoningDraft = resolvedReasoningLevel === "stream";
-  const streamDeliveryEnabled = streamMode !== "off";
+  const guestQueryId = context.guestQueryId;
+  const isGuestMessage = typeof guestQueryId === "string" && guestQueryId.length > 0;
+  // Guest Mode allows exactly one answerGuestQuery response, not normal
+  // sendMessage/editMessage draft traffic, so disable Telegram streaming lanes.
+  const streamDeliveryEnabled = streamMode !== "off" && !isGuestMessage;
   const rawReplyQuoteText =
     ctxPayload.ReplyToIsQuote && typeof ctxPayload.ReplyToQuoteText === "string"
       ? ctxPayload.ReplyToQuoteText
@@ -538,7 +542,7 @@ export const dispatchTelegramMessage = async ({
     !hasTelegramQuoteReply &&
     !accountBlockStreamingEnabled &&
     !forceBlockStreamingForReasoning;
-  const canStreamReasoningDraft = streamReasoningDraft;
+  const canStreamReasoningDraft = streamReasoningDraft && !isGuestMessage;
   const draftReplyToMessageId =
     replyToMode !== "off" && typeof msg.message_id === "number"
       ? (replyQuoteMessageId ?? msg.message_id)
@@ -909,6 +913,7 @@ export const dispatchTelegramMessage = async ({
     thread: threadSpec,
     tableMode,
     chunkMode,
+    guestQueryId,
     linkPreview: telegramCfg.linkPreview,
     replyQuoteMessageId,
     replyQuoteText,

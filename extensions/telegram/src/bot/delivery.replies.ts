@@ -214,6 +214,45 @@ async function deliverTextReply(params: {
   return firstDeliveredMessageId;
 }
 
+async function deliverGuestTextReply(params: {
+  bot: Bot;
+  guestQueryId: string;
+  chunkText: ChunkTextFn;
+  replyText: string;
+  replyMarkup?: ReturnType<typeof buildInlineKeyboard>;
+  linkPreview?: boolean;
+  progress: DeliveryProgress;
+}): Promise<string | undefined> {
+  const chunks = filterEmptyTelegramTextChunks(params.chunkText(params.replyText));
+  const firstChunk = chunks[0];
+  if (!firstChunk) {
+    return undefined;
+  }
+  const result = {
+    type: "article",
+    id: `openclaw-${Date.now().toString(36)}`,
+    title: "OpenClaw reply",
+    input_message_content: {
+      message_text: firstChunk.html,
+      parse_mode: "HTML",
+      ...(params.linkPreview === false ? { link_preview_options: { is_disabled: true } } : {}),
+    },
+    ...(params.replyMarkup ? { reply_markup: params.replyMarkup } : {}),
+  };
+  const sent = await (
+    params.bot.api.raw as unknown as {
+      answerGuestQuery: (args: { guest_query_id: string; result: unknown }) => Promise<{
+        inline_message_id?: string;
+      }>;
+    }
+  ).answerGuestQuery({
+    guest_query_id: params.guestQueryId,
+    result,
+  });
+  markDelivered(params.progress);
+  return sent.inline_message_id;
+}
+
 async function sendPendingFollowUpText(params: {
   bot: Bot;
   chatId: string;
@@ -690,6 +729,8 @@ export async function deliverReplies(params: {
   linkPreview?: boolean;
   /** When true, messages are sent with disable_notification. */
   silent?: boolean;
+  /** Telegram Bot API Guest Mode query id; replies via answerGuestQuery instead of sendMessage. */
+  guestQueryId?: string;
   /** Message id that the optional quote text belongs to. */
   replyQuoteMessageId?: number;
   /** Optional quote text for Telegram reply_parameters. */
@@ -824,7 +865,19 @@ export async function deliverReplies(params: {
         }),
       );
       let firstDeliveredMessageId: number | undefined;
-      if (mediaList.length === 0) {
+      let firstDeliveredInlineMessageId: string | undefined;
+      if (params.guestQueryId) {
+        const guestText = [reply.text || "", ...mediaList].filter(Boolean).join("\n\n");
+        firstDeliveredInlineMessageId = await deliverGuestTextReply({
+          bot: params.bot,
+          guestQueryId: params.guestQueryId,
+          chunkText,
+          replyText: guestText,
+          replyMarkup,
+          linkPreview: params.linkPreview,
+          progress,
+        });
+      } else if (mediaList.length === 0) {
         firstDeliveredMessageId = await deliverTextReply({
           bot: params.bot,
           chatId: params.chatId,
@@ -868,13 +921,15 @@ export async function deliverReplies(params: {
           progress,
         });
       }
-      await maybePinFirstDeliveredMessage({
-        pin: reply.delivery?.pin,
-        bot: params.bot,
-        chatId: params.chatId,
-        runtime: params.runtime,
-        firstDeliveredMessageId,
-      });
+      if (!params.guestQueryId) {
+        await maybePinFirstDeliveredMessage({
+          pin: reply.delivery?.pin,
+          bot: params.bot,
+          chatId: params.chatId,
+          runtime: params.runtime,
+          firstDeliveredMessageId,
+        });
+      }
 
       if (progress.deliveredCount > deliveredCountBeforeReply && transcriptMirror) {
         deliveredContents.push({ text: contentForSentHook, mediaUrls: mediaList });
@@ -892,6 +947,9 @@ export async function deliverReplies(params: {
         isGroup: params.mirrorIsGroup,
         groupId: params.mirrorGroupId,
       });
+      if (params.guestQueryId && firstDeliveredInlineMessageId) {
+        break;
+      }
     } catch (error) {
       emitMessageSentHooks({
         hookRunner,

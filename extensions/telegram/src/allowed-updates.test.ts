@@ -21,6 +21,7 @@ describe("resolveTelegramAllowedUpdates", () => {
     expect(updates).toEqual(expectedUpdates);
     expect(updates).toContain("message_reaction");
     expect(updates).toContain("channel_post");
+    expect(updates).toContain("guest_message");
     expect(new Set(updates).size).toBe(updates.length);
   });
 });

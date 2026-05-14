@@ -23,6 +23,7 @@ type TelegramSequentialKeyContext = {
     edited_message?: Message;
     channel_post?: Message;
     edited_channel_post?: Message;
+    guest_message?: Message;
     callback_query?: { message?: Message; data?: string };
     message_reaction?: { chat?: { id?: number } };
   };
@@ -63,6 +64,7 @@ export function getTelegramSequentialKey(ctx: TelegramSequentialKeyContext): str
     ctx.update?.edited_message ??
     ctx.update?.channel_post ??
     ctx.update?.edited_channel_post ??
+    ctx.update?.guest_message ??
     ctx.update?.callback_query?.message;
   const chatId = msg?.chat?.id ?? ctx.chat?.id;
   const rawText = msg?.text ?? msg?.caption;

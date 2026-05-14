@@ -526,6 +526,7 @@ export async function buildTelegramInboundContextPayload(params: {
       CommandSource: options?.commandSource,
       IsForum: isForum,
       TopicName: isForum && topicName ? topicName : undefined,
+      GuestQueryId: (msg as { guest_query_id?: string }).guest_query_id,
     },
   } satisfies BuildChannelTurnContextParams);
 

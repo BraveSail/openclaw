@@ -112,6 +112,7 @@ export type TelegramMessageContext = {
   removeAckAfterReply: boolean;
   statusReactionController: TelegramStatusReactionController | null;
   accountId: string;
+  guestQueryId?: string;
 };
 
 export const buildTelegramMessageContext = async ({
@@ -142,6 +143,8 @@ export const buildTelegramMessageContext = async ({
   sendChatActionHandler,
 }: BuildTelegramMessageContextParams): Promise<TelegramMessageContext | null> => {
   const msg = primaryCtx.message;
+  const guestQueryId = (msg as { guest_query_id?: string }).guest_query_id;
+  const isGuestMessage = typeof guestQueryId === "string" && guestQueryId.length > 0;
   const chatId = msg.chat.id;
   const isGroup = msg.chat.type === "group" || msg.chat.type === "supergroup";
   const senderId = msg.from?.id ? String(msg.from.id) : "";
@@ -323,6 +326,9 @@ export const buildTelegramMessageContext = async ({
   }
 
   const sendTyping = async () => {
+    if (isGuestMessage) {
+      return;
+    }
     await withTelegramApiErrorLogging({
       operation: "sendChatAction",
       fn: () =>
@@ -335,6 +341,9 @@ export const buildTelegramMessageContext = async ({
   };
 
   const sendRecordVoice = async () => {
+    if (isGuestMessage) {
+      return;
+    }
     try {
       await withTelegramApiErrorLogging({
         operation: "sendChatAction",
@@ -640,5 +649,6 @@ export const buildTelegramMessageContext = async ({
     removeAckAfterReply,
     statusReactionController,
     accountId: account.accountId,
+    guestQueryId,
   };
 };

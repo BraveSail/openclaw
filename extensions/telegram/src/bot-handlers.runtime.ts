@@ -2675,6 +2675,46 @@ export const registerTelegramHandlers = ({
     await recordEditedMessageForReplyChain(ctx, msg);
   });
 
+  // Bot API 10.0 Guest Mode: the bot can receive a one-shot guest_message
+  // when mentioned in a chat where it is not a member. Some grammY versions do
+  // not know guest_message as a top-level filter, so inspect the raw update in
+  // middleware instead of registering bot.on("guest_message"), which would make
+  // the provider fail to start on older runtimes.
+  bot.use(async (ctx, next) => {
+    const msg = (ctx.update as { guest_message?: Message } | undefined)?.guest_message;
+    if (!msg) {
+      await next();
+      return;
+    }
+    if (!(msg as { guest_query_id?: string }).guest_query_id) {
+      return;
+    }
+    const isGroup = msg.chat.type === "group" || msg.chat.type === "supergroup";
+    const isForum = await resolveTelegramForumFlag({
+      chatId: msg.chat.id,
+      chatType: msg.chat.type,
+      isGroup,
+      isForum: msg.chat.is_forum,
+      getChat,
+    });
+    const normalizedMsg = withResolvedTelegramForumFlag(msg, isForum);
+    await handleInboundMessageLike({
+      ctxForDedupe: ctx,
+      ctx: buildSyntheticContext(ctx, normalizedMsg),
+      msg: normalizedMsg,
+      chatId: normalizedMsg.chat.id,
+      isGroup,
+      isForum,
+      messageThreadId: normalizedMsg.message_thread_id,
+      senderId: normalizedMsg.from?.id != null ? String(normalizedMsg.from.id) : "",
+      senderUsername: normalizedMsg.from?.username ?? "",
+      requireConfiguredGroup: false,
+      sendOversizeWarning: false,
+      oversizeLogMessage: "guest message media exceeds size limit",
+      errorMessage: "guest_message handler failed",
+    });
+  });
+
   // Handle channel posts — enables bot-to-bot communication via Telegram channels.
   // Telegram bots cannot see other bot messages in groups, but CAN in channels.
   // This handler normalizes channel_post updates into the standard message pipeline.

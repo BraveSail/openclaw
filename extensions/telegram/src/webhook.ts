@@ -38,6 +38,11 @@ import {
 } from "./network-errors.js";
 import { createTelegramWebhookStatusPublisher } from "./webhook-status.js";
 
+type TelegramWebhookAllowedUpdates = Exclude<
+  Parameters<ReturnType<typeof createTelegramBot>["api"]["setWebhook"]>[1],
+  undefined
+>["allowed_updates"];
+
 const TELEGRAM_WEBHOOK_MAX_BODY_BYTES = 1024 * 1024;
 const TELEGRAM_WEBHOOK_BODY_TIMEOUT_MS = 30_000;
 const TELEGRAM_WEBHOOK_REGISTRATION_RETRY_POLICY: BackoffPolicy = {
@@ -454,7 +459,9 @@ export async function startTelegramWebhook(opts: {
         fn: () =>
           bot.api.setWebhook(publicUrl, {
             secret_token: secret,
-            allowed_updates: resolveTelegramAllowedUpdates(),
+            // "guest_message" is Bot API 10.0 and may be newer than grammY's type constants.
+            allowed_updates:
+              resolveTelegramAllowedUpdates() as unknown as TelegramWebhookAllowedUpdates,
             certificate: opts.webhookCertPath ? new InputFile(opts.webhookCertPath) : undefined,
           }),
       });
