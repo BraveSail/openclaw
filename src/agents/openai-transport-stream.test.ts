@@ -5441,6 +5441,32 @@ describe("buildOpenAICompletionsParams sanitizes reasoning replay fields", () =>
     maxTokens: 8192,
   } satisfies Model<"openai-completions">;
 
+  const nativeDeepSeekModel = {
+    id: "deepseek-v4-flash",
+    name: "DeepSeek V4 Flash",
+    api: "openai-completions",
+    provider: "deepseek",
+    baseUrl: "https://api.deepseek.com",
+    reasoning: true,
+    input: ["text"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 1_000_000,
+    maxTokens: 384_000,
+  } satisfies Model<"openai-completions">;
+
+  const nativeZaiModel = {
+    id: "glm-5.1",
+    name: "GLM 5.1",
+    api: "openai-completions",
+    provider: "zai",
+    baseUrl: "https://api.z.ai/api/paas/v4",
+    reasoning: true,
+    input: ["text"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 200_000,
+    maxTokens: 131_072,
+  } satisfies Model<"openai-completions">;
+
   function getAssistantMessage(params: { messages: unknown }) {
     expect(Array.isArray(params.messages)).toBe(true);
     const list = params.messages as Array<Record<string, unknown>>;
@@ -5507,6 +5533,26 @@ describe("buildOpenAICompletionsParams sanitizes reasoning replay fields", () =>
       expect(assistant[thinkingSignature]).toBe("Need to answer politely.");
     },
   );
+
+  it.each([
+    ["DeepSeek", nativeDeepSeekModel],
+    ["Z.AI", nativeZaiModel],
+  ] as const)("preserves native %s reasoning_content replay", (_label, model) => {
+    const assistant = getAssistantMessage(buildReplayParams(model, "reasoning_content"));
+
+    expect(assistant.reasoning_content).toBe("Need to answer politely.");
+  });
+
+  it.each([
+    ["DeepSeek", nativeDeepSeekModel],
+    ["Z.AI", nativeZaiModel],
+  ] as const)("strips non-native %s reasoning replay fields", (_label, model) => {
+    const assistant = getAssistantMessage(buildReplayParams(model, "reasoning_details"));
+
+    expect(assistant).not.toHaveProperty("reasoning_details");
+    expect(assistant).not.toHaveProperty("reasoning");
+    expect(assistant).not.toHaveProperty("reasoning_text");
+  });
 
   it("normalizes OpenRouter reasoning_text to reasoning", () => {
     const assistant = getAssistantMessage(buildReplayParams(openRouterModel, "reasoning_text"));

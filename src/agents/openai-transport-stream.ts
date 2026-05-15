@@ -2464,13 +2464,23 @@ function sanitizeOpenRouterReasoningReplayFields(record: Record<string, unknown>
   }
 }
 
+function sanitizeReasoningContentReplayFields(record: Record<string, unknown>): void {
+  delete record.reasoning_details;
+  delete record.reasoning;
+  delete record.reasoning_text;
+  if ("reasoning_content" in record && typeof record.reasoning_content !== "string") {
+    delete record.reasoning_content;
+  }
+}
+
 // OpenAI Chat Completions assistant-message input does not define reasoning
 // replay fields, while OpenRouter documents a compatible pass-back contract.
-// Keep OpenRouter's valid shapes, but normalize leaked string reasoning_details
-// from pi-ai thinking signatures before a follow-up request hits the wire.
+// Keep provider-owned valid shapes, but normalize leaked string
+// reasoning_details from pi-ai thinking signatures before a follow-up request
+// hits the wire.
 function sanitizeCompletionsReasoningReplayFields(
   messages: unknown,
-  options: { preserveOpenRouterReasoning: boolean },
+  options: { thinkingFormat: string },
 ): void {
   if (!Array.isArray(messages)) {
     return;
@@ -2483,10 +2493,16 @@ function sanitizeCompletionsReasoningReplayFields(
     if (record.role !== "assistant") {
       continue;
     }
-    if (options.preserveOpenRouterReasoning) {
-      sanitizeOpenRouterReasoningReplayFields(record);
-    } else {
-      stripCompletionsReasoningReplayFields(record);
+    switch (options.thinkingFormat) {
+      case "openrouter":
+        sanitizeOpenRouterReasoningReplayFields(record);
+        break;
+      case "deepseek":
+      case "zai":
+        sanitizeReasoningContentReplayFields(record);
+        break;
+      default:
+        stripCompletionsReasoningReplayFields(record);
     }
   }
 }
@@ -2507,7 +2523,7 @@ export function buildOpenAICompletionsParams(
   let messages = convertMessages(model as never, completionsContext, compat as never);
   injectToolCallThoughtSignatures(messages as unknown[], context, model);
   sanitizeCompletionsReasoningReplayFields(messages, {
-    preserveOpenRouterReasoning: compat.thinkingFormat === "openrouter",
+    thinkingFormat: compat.thinkingFormat,
   });
   if (compat.strictMessageKeys) {
     messages = stripCompletionMessagesToRoleContent(messages) as typeof messages;
