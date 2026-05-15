@@ -1,6 +1,11 @@
 import { normalizeChatType } from "../../channels/chat-type.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { SessionSendPolicyDecision } from "../../sessions/send-policy.js";
+import {
+  isExplicitCommandTurn,
+  resolveCommandTurnContext,
+  type CommandTurnContext,
+} from "../command-turn-context.js";
 import type { SourceReplyDeliveryMode } from "../get-reply-options.types.js";
 
 export type SourceReplyDeliveryModeContext = {
@@ -10,13 +15,11 @@ export type SourceReplyDeliveryModeContext = {
   CommandSource?: "text" | "native";
   /** Telegram Bot API Guest Mode query id; guest replies must use automatic delivery. */
   GuestQueryId?: string;
+  CommandTurn?: CommandTurnContext;
 };
 
 export function isExplicitSourceReplyCommand(ctx: SourceReplyDeliveryModeContext): boolean {
-  if (ctx.CommandSource === "native") {
-    return true;
-  }
-  return ctx.CommandSource === "text" && ctx.CommandAuthorized === true;
+  return isExplicitCommandTurn(resolveCommandTurnContext(ctx));
 }
 
 export function resolveSourceReplyDeliveryMode(params: {

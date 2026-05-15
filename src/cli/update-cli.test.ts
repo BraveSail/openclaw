@@ -3307,6 +3307,12 @@ describe("update-cli", () => {
         });
         expect(runRestartScript).toHaveBeenCalledTimes(1);
         expect(runDaemonRestart).not.toHaveBeenCalled();
+        expect(
+          vi
+            .mocked(defaultRuntime.log)
+            .mock.calls.map((call) => String(call[0]))
+            .join("\n"),
+        ).toContain("Gateway: restarted and verified.");
       },
     },
     {
@@ -3349,6 +3355,12 @@ describe("update-cli", () => {
         expect(runDaemonInstall).not.toHaveBeenCalled();
         expect(runRestartScript).not.toHaveBeenCalled();
         expect(runDaemonRestart).not.toHaveBeenCalled();
+        expect(
+          vi
+            .mocked(defaultRuntime.log)
+            .mock.calls.map((call) => String(call[0]))
+            .join("\n"),
+        ).toContain("Gateway: restart skipped (--no-restart).");
       },
     },
     {
@@ -3362,6 +3374,9 @@ describe("update-cli", () => {
       assert: () => {
         const logLines = vi.mocked(defaultRuntime.log).mock.calls.map((call) => String(call[0]));
         expect(logLines.some((line) => line.includes("Daemon restarted successfully."))).toBe(
+          false,
+        );
+        expect(logLines.some((line) => line.includes("Gateway: restarted and verified."))).toBe(
           false,
         );
       },
@@ -3485,6 +3500,12 @@ describe("update-cli", () => {
     expect(runRestartScript).not.toHaveBeenCalled();
     const probeCall = probeGatewayCall() as { includeDetails?: boolean } | undefined;
     expect(probeCall?.includeDetails).toBe(true);
+    expect(
+      vi
+        .mocked(defaultRuntime.log)
+        .mock.calls.map((call) => String(call[0]))
+        .join("\n"),
+    ).toContain("Gateway: restarted and verified.");
     expect(defaultRuntime.exit).not.toHaveBeenCalledWith(1);
   });
 
