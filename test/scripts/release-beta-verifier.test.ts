@@ -6,7 +6,7 @@ import {
 
 describe("parseReleaseVerifyBetaArgs", () => {
   it("defaults beta verification to the matching tag and repo", () => {
-    expect(parseReleaseVerifyBetaArgs(["2026.5.10-beta.3"])).toMatchObject({
+    expect(parseReleaseVerifyBetaArgs(["2026.5.10-beta.3"])).toEqual({
       version: "2026.5.10-beta.3",
       tag: "v2026.5.10-beta.3",
       distTag: "beta",
@@ -34,7 +34,12 @@ describe("parseReleaseVerifyBetaArgs", () => {
         "--rerun-failed-clawhub",
         "--allow-verified-clawhub-run-failure",
       ]),
-    ).toMatchObject({
+    ).toEqual({
+      version: "2026.5.10-beta.3",
+      tag: "v2026.5.10-beta.3",
+      distTag: "beta",
+      repo: "openclaw/openclaw",
+      registry: "https://clawhub.ai",
       skipPostpublish: true,
       rerunFailedClawHub: true,
       allowVerifiedClawHubRunFailure: true,

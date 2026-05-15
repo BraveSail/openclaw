@@ -6,6 +6,7 @@ import {
   validateChatEvent,
   validateModelsListParams,
   validateNodeEventResult,
+  validateNodePairRequestParams,
   validateNodePresenceAlivePayload,
   validateTasksCancelParams,
   validateTasksListParams,
@@ -273,6 +274,7 @@ describe("validateTalkSession", () => {
     expect(
       validateTalkSessionCreateParams({
         sessionKey: "agent:main:main",
+        spawnedBy: "agent:main:parent",
         provider: "openai",
         model: "gpt-realtime-2",
         voice: "alloy",
@@ -550,6 +552,27 @@ describe("validateNodePresenceAlivePayload", () => {
       validateNodePresenceAlivePayload({
         trigger: "silent_push",
         arbitrary: true,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("validateNodePairRequestParams", () => {
+  it("accepts node pairing permissions", () => {
+    expect(
+      validateNodePairRequestParams({
+        nodeId: "ios-node-1",
+        commands: ["canvas.snapshot"],
+        permissions: { camera: true, notifications: false },
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects non-boolean node pairing permissions", () => {
+    expect(
+      validateNodePairRequestParams({
+        nodeId: "ios-node-1",
+        permissions: { camera: "yes" },
       }),
     ).toBe(false);
   });

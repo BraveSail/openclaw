@@ -8,11 +8,11 @@ import {
 } from "../../scripts/lib/bundled-plugin-build-entries.mjs";
 
 function expectNoPrefixMatches(values: string[], prefix: string) {
-  expect(values.some((value) => value.startsWith(prefix))).toBe(false);
+  expect(values.filter((value) => value.startsWith(prefix))).toEqual([]);
 }
 
 function expectSomePrefixMatch(values: string[], prefix: string) {
-  expect(values.some((value) => value.startsWith(prefix))).toBe(true);
+  expect(values.filter((value) => value.startsWith(prefix))).not.toEqual([]);
 }
 
 function pickEntries(entries: Record<string, string>, keys: readonly string[]) {
@@ -121,6 +121,16 @@ describe("bundled plugin build entries", () => {
     const artifacts = listBundledPluginPackArtifacts();
 
     for (const pluginId of ["amazon-bedrock", "amazon-bedrock-mantle", "anthropic-vertex"]) {
+      expectNoPrefixMatches(Object.keys(entries), `extensions/${pluginId}/`);
+      expectNoPrefixMatches(artifacts, `dist/extensions/${pluginId}/`);
+    }
+  });
+
+  it("keeps externalized runtime-dependency plugins out of bundled dist entries", () => {
+    const entries = listBundledPluginBuildEntries();
+    const artifacts = listBundledPluginPackArtifacts();
+
+    for (const pluginId of ["openshell", "slack"]) {
       expectNoPrefixMatches(Object.keys(entries), `extensions/${pluginId}/`);
       expectNoPrefixMatches(artifacts, `dist/extensions/${pluginId}/`);
     }

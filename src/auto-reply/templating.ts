@@ -187,6 +187,8 @@ export type MsgContext = {
   /** True when current-turn sticker media is present in MediaPaths (false for cached-description path). */
   StickerMediaIncluded?: boolean;
   ReplyToMediaMetadata?: TelegramMediaContextMetadata;
+  /** Telegram Bot API 10.0 Guest Mode query id; non-empty when the message was delivered via Update.guest_message. */
+  GuestQueryId?: string;
   OutputDir?: string;
   OutputBase?: string;
   /** Remote host for SCP when media lives on a different machine (e.g., openclaw@192.168.64.3). */

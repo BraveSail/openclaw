@@ -237,8 +237,7 @@ describe("loadProviderCatalogModelsForList", () => {
       staticOnly: true,
     });
 
-    const discoveryRequest =
-      providerDiscoveryMocks.resolveRuntimePluginDiscoveryProviders.mock.calls[0]?.[0];
+    const discoveryRequest = firstDiscoveryRequest();
     expect(discoveryRequest?.onlyPluginIds).toStrictEqual(["moonshot"]);
     expect(discoveryRequest?.requireCompleteDiscoveryEntryCoverage).toBe(true);
     expect(discoveryRequest?.discoveryEntriesOnly).toBe(true);
@@ -378,8 +377,7 @@ describe("loadProviderCatalogModelsForList", () => {
       }),
     ).resolves.toBe(false);
 
-    const discoveryRequest =
-      providerDiscoveryMocks.resolveRuntimePluginDiscoveryProviders.mock.calls[0]?.[0];
+    const discoveryRequest = firstDiscoveryRequest();
     expect(discoveryRequest?.onlyPluginIds).toStrictEqual(["ollama"]);
     expect(discoveryRequest?.requireCompleteDiscoveryEntryCoverage).toBe(true);
     expect(discoveryRequest?.discoveryEntriesOnly).toBe(true);
@@ -457,8 +455,7 @@ describe("loadProviderCatalogModelsForList", () => {
       ...baseParams,
     });
 
-    const discoveryRequest =
-      providerDiscoveryMocks.resolveRuntimePluginDiscoveryProviders.mock.calls[0]?.[0];
+    const discoveryRequest = firstDiscoveryRequest();
     expect(discoveryRequest?.onlyPluginIds).toStrictEqual(["bundled-demo"]);
     expect(discoveryRequest?.includeUntrustedWorkspacePlugins).toBe(false);
     expect(workspaceStaticCatalog).not.toHaveBeenCalled();
