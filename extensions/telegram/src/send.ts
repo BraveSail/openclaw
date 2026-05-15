@@ -13,6 +13,7 @@ import { getOrCreateAccountThrottler } from "./account-throttler.js";
 import { type ResolvedTelegramAccount, resolveTelegramAccount } from "./accounts.js";
 import { withTelegramApiErrorLogging } from "./api-logging.js";
 import { normalizeTelegramApiRoot } from "./api-root.js";
+import { shouldAutoFoldTelegramText, wrapTelegramExpandableBlockquote } from "./auto-fold.js";
 import { buildTypingThreadParams } from "./bot/helpers.js";
 import type { TelegramInlineButtons } from "./button-types.js";
 import { splitTelegramCaption } from "./caption.js";
@@ -183,7 +184,6 @@ const MESSAGE_NOT_MODIFIED_RE =
 const MESSAGE_DELETE_NOOP_RE =
   /message to delete not found|message can't be deleted|MESSAGE_ID_INVALID|MESSAGE_DELETE_FORBIDDEN/i;
 const CHAT_NOT_FOUND_RE = /400: Bad Request: chat not found/i;
-const TELEGRAM_AUTO_EXPANDABLE_THRESHOLD = 100;
 const sendLogger = createSubsystemLogger("telegram/send");
 const diagLogger = createSubsystemLogger("telegram/diagnostic");
 const telegramClientOptionsCache = new Map<string, ApiClientOptions | undefined>();
@@ -743,9 +743,7 @@ export async function sendMessageTelegram(
   const buildChunkedTextPlan = (rawText: string, context: string): TelegramTextChunk[] => {
     const wrapAutoFold = autoFoldEnabled && rawText === text;
     const renderedHtml = renderHtmlText(rawText);
-    const htmlText = wrapAutoFold
-      ? `<blockquote expandable>${renderedHtml}</blockquote>`
-      : renderedHtml;
+    const htmlText = wrapAutoFold ? wrapTelegramExpandableBlockquote(renderedHtml) : renderedHtml;
     const fallbackText = opts.plainText ?? rawText;
     let htmlChunks: string[];
     try {
@@ -1396,7 +1394,7 @@ export async function editMessageTelegram(
     chatType: editTarget.chatType,
   });
   const htmlText = editAutoFold
-    ? `<blockquote expandable>${renderedEditHtml}</blockquote>`
+    ? wrapTelegramExpandableBlockquote(renderedEditHtml)
     : renderedEditHtml;
 
   // Reply markup semantics:
@@ -1454,23 +1452,6 @@ export async function editMessageTelegram(
 
   logVerbose(`[telegram] Edited message ${messageId} in chat ${chatId}`);
   return { ok: true, messageId: String(messageId), chatId };
-}
-
-function shouldAutoFoldTelegramText(params: {
-  text: string;
-  textMode: "markdown" | "html";
-  chatType?: "direct" | "group" | "unknown";
-}): boolean {
-  if (params.chatType === "direct") {
-    return false;
-  }
-  if (params.text.length <= TELEGRAM_AUTO_EXPANDABLE_THRESHOLD) {
-    return false;
-  }
-  if (params.textMode === "html" && /<blockquote(?:\s+expandable)?\b/i.test(params.text)) {
-    return false;
-  }
-  return true;
 }
 
 function inferFilename(kind: MediaKind) {

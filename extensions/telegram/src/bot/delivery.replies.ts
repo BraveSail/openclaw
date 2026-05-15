@@ -28,6 +28,7 @@ import { danger, logVerbose } from "openclaw/plugin-sdk/runtime-env";
 import { createSubsystemLogger } from "openclaw/plugin-sdk/runtime-env";
 import { formatErrorMessage } from "openclaw/plugin-sdk/ssrf-runtime";
 import { loadWebMedia } from "openclaw/plugin-sdk/web-media";
+import { shouldAutoFoldTelegramText, wrapTelegramExpandableBlockquote } from "../auto-fold.js";
 import { resolveTelegramInlineButtons, type TelegramInlineButtons } from "../button-types.js";
 import { splitTelegramCaption } from "../caption.js";
 import {
@@ -228,12 +229,23 @@ async function deliverGuestTextReply(params: {
   if (!firstChunk) {
     return undefined;
   }
+  // Guest Mode replies always target a group/supergroup the bot is not a
+  // member of, so the chatType is effectively "group". Apply the same
+  // auto-fold rule as sendMessageTelegram.
+  const autoFold = shouldAutoFoldTelegramText({
+    text: params.replyText,
+    textMode: "markdown",
+    chatType: "group",
+  });
+  const messageHtml = autoFold
+    ? wrapTelegramExpandableBlockquote(firstChunk.html)
+    : firstChunk.html;
   const result = {
     type: "article",
     id: `openclaw-${Date.now().toString(36)}`,
     title: "OpenClaw reply",
     input_message_content: {
-      message_text: firstChunk.html,
+      message_text: messageHtml,
       parse_mode: "HTML",
       ...(params.linkPreview === false ? { link_preview_options: { is_disabled: true } } : {}),
     },
